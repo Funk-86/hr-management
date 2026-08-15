@@ -1,0 +1,34 @@
+<idea-plugin>
+    <id>org.example.hrupgrade</id>
+    <name>HR Upgrade Packer</name>
+    <vendor email="dev@example.com">hr-management</vendor>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup id="HR Upgrade" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <group id="HrUpgrade.Group"
+               text="HR Upgrade"
+               popup="true"
+               description="智汇人事升级包工具">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="HrUpgrade.PackUpgrade"
+                    class="org.example.hrupgrade.PackUpgradeAction"
+                    text="生成升级包"
+                    description="一键 Maven/前端构建并打包为跨平台升级包">
+                <keyboard-shortcut first-keystroke="control alt shift U" keymap="$default"/>
+            </action>
+            <action id="HrUpgrade.OpenConfig"
+                    class="org.example.hrupgrade.OpenConfigAction"
+                    text="打开/创建升级配置"
+                    description="打开项目根目录 hr-upgrade.json"/>
+            <action id="HrUpgrade.OpenOutput"
+                    class="org.example.hrupgrade.OpenOutputAction"
+                    text="打开升级包输出目录"
+                    description="打开 dist/upgrades"/>
+        </group>
+    </actions>
+</idea-plugin>

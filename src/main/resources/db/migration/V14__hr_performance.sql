@@ -1,0 +1,26 @@
+-- 绩效考核单
+CREATE TABLE IF NOT EXISTS hr_performance_review (
+    id              BIGINT        NOT NULL AUTO_INCREMENT,
+    employee_id     BIGINT        NOT NULL COMMENT '被考核员工',
+    period_type     TINYINT       NOT NULL COMMENT '1月度 2季度',
+    period_key      VARCHAR(16)   NOT NULL COMMENT '如 2026-08 / 2026-Q3',
+    score_grade     TINYINT       DEFAULT NULL COMMENT '1优 2良 3中 4合格 5差',
+    comment_text    VARCHAR(1000) DEFAULT NULL COMMENT '评语',
+    task_done_count INT           DEFAULT NULL COMMENT '周期内完成任务数快照',
+    task_total_count INT          DEFAULT NULL COMMENT '周期内参与任务数快照',
+    task_avg_grade  DECIMAL(4,2)  DEFAULT NULL COMMENT '周期内任务评分均分快照(1-5)',
+    reviewer_id     BIGINT        NOT NULL COMMENT '评分人（员工ID）',
+    status          TINYINT       NOT NULL DEFAULT 0 COMMENT '0草稿 1已提交 2已确认',
+    confirmed_at    DATETIME      DEFAULT NULL,
+    confirmed_by    BIGINT        DEFAULT NULL COMMENT '确认人用户/员工ID',
+    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by      BIGINT        DEFAULT NULL,
+    updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by      BIGINT        DEFAULT NULL,
+    deleted         TINYINT       NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_emp_period (employee_id, period_type, period_key),
+    KEY idx_period (period_type, period_key),
+    KEY idx_reviewer (reviewer_id),
+    KEY idx_status (status)
+) ENGINE=InnoDB COMMENT='绩效考核单';

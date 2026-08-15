@@ -1,0 +1,47 @@
+# 生产环境配置（启动时加 -Dspring.profiles.active=prod 或 SPRING_PROFILES_ACTIVE=prod）
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    root: warn
+    org.example.hrmanagement: info
+
+aliyun:
+  oss:
+    endpoint: ${ALIYUN_OSS_ENDPOINT:oss-cn-beijing.aliyuncs.com}
+    access-key-id: ${ALIYUN_ACCESS_KEY_ID}
+    access-key-secret: ${ALIYUN_ACCESS_KEY_SECRET}
+    bucket-name: ${ALIYUN_OSS_BUCKET}
+    public-domain: ${ALIYUN_OSS_PUBLIC_DOMAIN}
+    avatar:
+      max-size: 2097152
+      allowed-types: image/jpeg,image/png,image/webp
+      employee-prefix: avatar/employee/
+      user-prefix: avatar/user/
+      default-key: avatar/default/default-avatar.png
+    attachment:
+      max-size: 10485760
+      allowed-types: image/jpeg,image/png,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      prefix: task/attachment/
+    document:
+      max-size: 20971520
+      allowed-types: application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      prefix: employee/document/
+
+# 生产环境请改为实际前端域名，多个用 YAML 列表追加
+app:
+  cors:
+    allowed-origin-patterns:
+      - ${APP_CORS_ORIGIN:https://your-domain.com}

@@ -1,0 +1,42 @@
+@startuml 智汇人事管理系统-用例图
+left to right direction
+skinparam shadowing false
+
+title 智汇人事管理系统 - 用例图
+
+actor "员工" as EMP
+actor "管理人员\n(HR/经理)" as MGR
+actor "超级管理员" as ADMIN
+
+rectangle "智汇人事管理系统" {
+  usecase "登录" as UC1
+  usecase "工作台" as UC2
+  usecase "组织管理" as UC3
+  usecase "员工管理" as UC4
+  usecase "考勤管理" as UC5
+  usecase "请假管理" as UC6
+  usecase "薪资管理" as UC7
+}
+
+EMP --> UC1
+EMP --> UC2
+EMP --> UC5
+EMP --> UC6
+
+MGR --> UC1
+MGR --> UC2
+MGR --> UC3
+MGR --> UC4
+MGR --> UC5
+MGR --> UC6
+MGR --> UC7
+
+ADMIN --> UC1
+ADMIN --> UC2
+ADMIN --> UC3
+ADMIN --> UC4
+ADMIN --> UC5
+ADMIN --> UC6
+ADMIN --> UC7
+
+@enduml

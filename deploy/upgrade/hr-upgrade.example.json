@@ -1,0 +1,17 @@
+{
+  "frontendPath": "D:/vue/vue-vben-admin-main",
+  "includeBackend": true,
+  "includeFrontend": true,
+  "skipTests": true,
+  "skipFrontendInstall": false,
+  "outputDir": "dist/upgrades",
+  "jarName": "hr-management.jar",
+  "upload": {
+    "enabled": false,
+    "host": "10.0.0.10",
+    "port": 22,
+    "user": "root",
+    "remoteDir": "/opt/hr/upgrades",
+    "privateKeyPath": ""
+  }
+}

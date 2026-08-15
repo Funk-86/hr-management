@@ -1,0 +1,17 @@
+{
+  "name": "defense-ppt",
+  "private": true,
+  "scripts": {
+    "dev": "slidev --open",
+    "build": "slidev build",
+    "export": "slidev export"
+  },
+  "dependencies": {
+    "@slidev/cli": "^51.0.0",
+    "@slidev/theme-default": "^0.25.0"
+  },
+  "devDependencies": {
+    "@iconify-json/mdi": "^1.2.3",
+    "playwright-chromium": "^1.61.1"
+  }
+}
