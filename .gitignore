@@ -39,3 +39,9 @@ application-local.yml
 deploy/.env
 hr-upgrade.json
 dist/upgrades/
+
+### IDEA plugin build caches ###
+idea-plugin/.gradle/
+idea-plugin/.intellijPlatform/
+idea-plugin/build/
+

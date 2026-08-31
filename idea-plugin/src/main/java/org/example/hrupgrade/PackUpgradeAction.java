@@ -54,8 +54,10 @@ public class PackUpgradeAction extends AnAction implements DumbAware {
         boolean includeFrontend = dialog.isIncludeFrontend();
         boolean openFolder = dialog.isOpenFolder();
         boolean skipUpload = dialog.isSkipUpload();
+        boolean remoteApply = dialog.isRemoteApply();
 
-        ProgressManager.getInstance().run(new Task.Backgroundable(project, "正在生成 HR 升级包…", true) {
+        String title = remoteApply ? "正在打包并远程更新 HR…" : "正在生成 HR 升级包…";
+        ProgressManager.getInstance().run(new Task.Backgroundable(project, title, true) {
             @Override
             public void run(@NotNull ProgressIndicator indicator) {
                 indicator.setIndeterminate(true);
@@ -65,27 +67,29 @@ public class PackUpgradeAction extends AnAction implements DumbAware {
                             includeBackend,
                             includeFrontend,
                             skipUpload,
+                            remoteApply,
                             line -> indicator.setText2(trimLine(line))
                     );
                     ApplicationManager.getApplication().invokeLater(() -> {
                         if (result.exitCode() == 0) {
                             Path latest = findLatestZip(result.outputDir()).orElse(result.outputDir());
-                            showNotification(project,
-                                    "升级包已生成: " + latest,
-                                    NotificationType.INFORMATION);
+                            String msg = remoteApply
+                                    ? "已打包并远程更新服务器。产物: " + latest
+                                    : "升级包已生成: " + latest;
+                            showNotification(project, msg, NotificationType.INFORMATION);
                             if (openFolder) {
                                 openPath(project, result.outputDir());
                             }
                         } else {
                             showNotification(project,
-                                    "生成失败 (exit=" + result.exitCode() + ")，请查看 Run/终端输出或日志末尾:\n"
+                                    "失败 (exit=" + result.exitCode() + ")，请查看日志末尾:\n"
                                             + tail(result.log(), 1200),
                                     NotificationType.ERROR);
                         }
                     });
                 } catch (Exception ex) {
                     ApplicationManager.getApplication().invokeLater(() ->
-                            showNotification(project, "生成异常: " + ex.getMessage(), NotificationType.ERROR));
+                            showNotification(project, "异常: " + ex.getMessage(), NotificationType.ERROR));
                 }
             }
         });

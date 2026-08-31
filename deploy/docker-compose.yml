@@ -35,14 +35,23 @@ services:
       mysql:
         condition: service_healthy
     environment:
+      TZ: Asia/Shanghai
+      JAVA_TOOL_OPTIONS: -Duser.timezone=Asia/Shanghai
       SPRING_PROFILES_ACTIVE: prod
       SERVER_PORT: 8080
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-hr_management}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-hr_management}?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-hr_app}
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-hr123456}
       JWT_SECRET: ${JWT_SECRET:-hr-docker-jwt-secret-change-me-32chars!!}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-86400000}
       APP_CORS_ORIGIN: ${APP_CORS_ORIGIN:-http://localhost}
+      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
+      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
+      ALIYUN_OSS_ENDPOINT: ${ALIYUN_OSS_ENDPOINT:-oss-cn-beijing.aliyuncs.com}
+      ALIYUN_OSS_BUCKET: ${ALIYUN_OSS_BUCKET:-funk1}
+      ALIYUN_OSS_PUBLIC_DOMAIN: ${ALIYUN_OSS_PUBLIC_DOMAIN:-funk1.oss-cn-beijing.aliyuncs.com}
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
+      SPRING_FLYWAY_BASELINE_VERSION: "16"
     expose:
       - "8080"
 
@@ -54,8 +63,10 @@ services:
       - backend
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
       - ./frontend-dist:/usr/share/nginx/html:ro
 
 volumes:

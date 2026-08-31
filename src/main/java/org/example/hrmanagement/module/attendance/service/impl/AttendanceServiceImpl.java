@@ -41,6 +41,9 @@ public class AttendanceServiceImpl implements AttendanceService {
     private final FaceService faceService;
 
 
+    private static final int STATUS_LEAVE = 5;
+    private static final int STATUS_FIELD = 6;
+
     @Override
     public void checkIn(AttendanceCheckDTO dto) {
         Long employeeId = resolveCheckEmployeeId(dto != null ? dto.getEmployeeId() : null);
@@ -54,6 +57,7 @@ public class AttendanceServiceImpl implements AttendanceService {
                         .eq(Attendance::getEmployeeId, employeeId)
                         .eq(Attendance::getAttendDate, today)
         );
+        assertNotLeaveOrFieldDay(existing, "当日已请假，无法打卡");
         if (existing != null && existing.getCheckIn() != null) {
             throw new BusinessException("该员工今日已打卡");
         }
@@ -89,6 +93,7 @@ public class AttendanceServiceImpl implements AttendanceService {
                         .eq(Attendance::getEmployeeId, employeeId)
                         .eq(Attendance::getAttendDate, today)
         );
+        assertNotLeaveOrFieldDay(existing, "当日已请假，无法打卡");
         if (existing == null || existing.getCheckIn() == null) {
             throw new BusinessException("请先上班打卡");
         }
@@ -108,6 +113,13 @@ public class AttendanceServiceImpl implements AttendanceService {
         }
 
         attendanceMapper.updateById(existing);
+    }
+
+    private void assertNotLeaveOrFieldDay(Attendance existing, String message) {
+        if (existing != null && existing.getStatus() != null
+                && (existing.getStatus() == STATUS_LEAVE || existing.getStatus() == STATUS_FIELD)) {
+            throw new BusinessException(existing.getStatus() == STATUS_FIELD ? "当日已外勤，无需打卡" : message);
+        }
     }
 
     private static final int EXPORT_LIMIT = 5000;

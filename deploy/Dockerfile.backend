@@ -1,12 +1,24 @@
 # 后端多阶段构建
+# - 默认：Maven 编译 src
+# - 若 deploy/prebuilt/app.jar 存在（升级包 apply 写入）：直接使用该 jar，跳过 Maven
+
 FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /app
 COPY pom.xml .
 COPY src ./src
-RUN mvn -B -DskipTests package
+COPY deploy/prebuilt /prebuilt/
+RUN if [ -f /prebuilt/app.jar ]; then \
+      echo ">>> Using prebuilt jar from deploy/prebuilt/app.jar"; \
+      mkdir -p target && cp /prebuilt/app.jar target/hr-management.jar; \
+    else \
+      echo ">>> Maven package from source"; \
+      mvn -B -DskipTests package && \
+      JAR=$(ls target/hr-management-*.jar | head -n1) && \
+      cp "$JAR" target/hr-management.jar; \
+    fi
 
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
-COPY --from=build /app/target/hr-management-*.jar app.jar
+COPY --from=build /app/target/hr-management.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]

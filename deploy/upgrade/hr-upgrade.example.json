@@ -11,7 +11,9 @@
     "host": "10.0.0.10",
     "port": 22,
     "user": "root",
-    "remoteDir": "/opt/hr/upgrades",
-    "privateKeyPath": ""
+    "remoteDir": "/opt/hr-management/upgrades",
+    "privateKeyPath": "",
+    "hrHome": "/opt/hr-management/deploy",
+    "applyAfterUpload": false
   }
 }

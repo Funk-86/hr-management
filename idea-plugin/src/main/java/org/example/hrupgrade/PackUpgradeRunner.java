@@ -30,6 +30,7 @@ final class PackUpgradeRunner {
             boolean includeBackend,
             boolean includeFrontend,
             boolean skipUpload,
+            boolean remoteApply,
             Consumer<String> lineConsumer
     ) throws Exception {
         Path scriptDir = ProjectPaths.upgradeScriptDir(repoRoot);
@@ -56,6 +57,8 @@ final class PackUpgradeRunner {
             args.add(includeBackend ? "true" : "false");
             args.add("-IncludeFrontend");
             args.add(includeFrontend ? "true" : "false");
+            args.add("-RemoteApply");
+            args.add(remoteApply ? "true" : "false");
             if (skipUpload) {
                 args.add("-SkipUpload");
             }
@@ -70,6 +73,8 @@ final class PackUpgradeRunner {
             args.add(includeBackend ? "true" : "false");
             args.add("--include-frontend");
             args.add(includeFrontend ? "true" : "false");
+            args.add("--remote-apply");
+            args.add(remoteApply ? "true" : "false");
             if (skipUpload) {
                 args.add("--skip-upload");
             }

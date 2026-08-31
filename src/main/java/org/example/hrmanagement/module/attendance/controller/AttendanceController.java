@@ -27,14 +27,14 @@ public class AttendanceController {
     @Autowired
     private AttendanceService attendanceService;
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER','EMPLOYEE')")
+    @PreAuthorize("hasAuthority('feat.attendance.self')")
     @PostMapping("/check-in")
     public Result<Void> checkIn(@Valid @RequestBody AttendanceCheckDTO dto){
         attendanceService.checkIn(dto);
         return Result.success();
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER','EMPLOYEE')")
+    @PreAuthorize("hasAuthority('feat.attendance.self')")
     @PostMapping("/check-out")
     public Result<Void> checkOut(@Valid @RequestBody AttendanceCheckDTO dto){
         attendanceService.checkOut(dto);
@@ -42,7 +42,7 @@ public class AttendanceController {
     }
 
     @Operation(summary = "考勤列表（分页）")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER','EMPLOYEE')")
+    @PreAuthorize("hasAuthority('feat.attendance.self')")
     @GetMapping
     public Result<PageResult<AttendanceVO>> getAll(@Valid PageQuery page){
         return Result.success(attendanceService.getAll(page));
@@ -50,7 +50,7 @@ public class AttendanceController {
 
     @Operation(summary = "导出考勤 Excel")
     @OperationLog(module = "考勤管理", value = "导出考勤")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER','EMPLOYEE')")
+    @PreAuthorize("hasAuthority('feat.attendance.self')")
     @GetMapping("/export")
     public void export(HttpServletResponse response) {
         List<AttendanceVO> list = attendanceService.listForExport();
@@ -58,7 +58,7 @@ public class AttendanceController {
         ExcelExportHelper.write(response, "考勤台账.xlsx", "考勤", AttendanceExportRow.class, rows);
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER','EMPLOYEE')")
+    @PreAuthorize("hasAuthority('feat.attendance.self')")
     @GetMapping("/{id}")
     public Result<AttendanceVO> getOne(@PathVariable Long id){
         return Result.success(attendanceService.getOne(id));
@@ -77,6 +77,7 @@ public class AttendanceController {
             case 3 -> "早退";
             case 4 -> "缺勤";
             case 5 -> "请假";
+            case 6 -> "外勤";
             default -> "";
         });
         row.setWorkHours(vo.getWorkHours() == null ? "" : vo.getWorkHours().toPlainString());
@@ -84,35 +85,35 @@ public class AttendanceController {
         return row;
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN')")
+    @PreAuthorize("hasAuthority('feat.org.manage')")
     @PostMapping
     public Result<Void> create(@RequestBody AttendanceVO vo){
         attendanceService.create(vo);
         return Result.success();
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN')")
+    @PreAuthorize("hasAuthority('feat.org.manage')")
     @PutMapping("/{id}")
     public Result<Void> update(@PathVariable Long id, @RequestBody AttendanceVO vo){
         attendanceService.update(id, vo);
         return Result.success();
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN')")
+    @PreAuthorize("hasAuthority('feat.org.manage')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id){
         attendanceService.delete(id);
         return Result.success();
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER','EMPLOYEE')")
+    @PreAuthorize("hasAuthority('feat.attendance.self')")
     @PostMapping("/check-in/face")
     public Result<Void> checkInByFace(@Valid @RequestBody FaceCheckDTO dto) {
         attendanceService.checkInByFace(dto);
         return Result.success();
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER','EMPLOYEE')")
+    @PreAuthorize("hasAuthority('feat.attendance.self')")
     @PostMapping("/check-out/face")
     public Result<Void> checkOutByFace(@Valid @RequestBody FaceCheckDTO dto) {
         attendanceService.checkOutByFace(dto);

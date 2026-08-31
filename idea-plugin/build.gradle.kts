@@ -42,12 +42,12 @@ intellijPlatform {
             untilBuild = "253.*"
         }
         description = """
-            一键为智汇人事系统生成跨平台升级包（Windows / Linux）。
+            一键为智汇人事系统生成跨平台升级包，并可 SSH 直连服务器自动 Docker 更新。
             工具菜单 → HR Upgrade → 生成升级包。
-            会调用仓库内 deploy/upgrade/pack-upgrade 脚本，产出 zip 与 apply 脚本。
         """.trimIndent()
         changeNotes = """
             <ul>
+              <li>1.0.3 支持上传后 SSH 远程 apply（Docker 预编译 jar + 前端覆盖）</li>
               <li>1.0.2 修复 Windows PowerShell 编码导致的打包脚本解析失败</li>
               <li>1.0.1 兼容 IntelliJ IDEA 2025.2（build 252）</li>
               <li>1.0.0 首次发布：一键打包后端 jar / 前端 dist，可选 SCP 上传</li>

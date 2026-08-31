@@ -10,9 +10,12 @@ param(
     [switch]$BackendOnly,
     [switch]$FrontendOnly,
     [switch]$SkipUpload,
+    [switch]$SkipRemoteApply,
     # 由 IDEA 插件显式传入：true / false（优先于配置文件）
     [string]$IncludeBackend = "",
-    [string]$IncludeFrontend = ""
+    [string]$IncludeFrontend = "",
+    # 插件：是否在 SCP 后 SSH 远程 apply（空=跟配置；true/false 覆盖）
+    [string]$RemoteApply = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -105,6 +108,22 @@ Copy-Item (Join-Path $Tpl "apply.ps1") (Join-Path $PkgDir "bin\apply.ps1") -Forc
 Copy-Item (Join-Path $Tpl "rollback.sh") (Join-Path $PkgDir "bin\rollback.sh") -Force
 Copy-Item (Join-Path $Tpl "rollback.ps1") (Join-Path $PkgDir "bin\rollback.ps1") -Force
 Copy-Item (Join-Path $Tpl "README.txt") (Join-Path $PkgDir "README.txt") -Force
+# 保证 shell 脚本是 LF，避免服务器 bash 报 set: pipefail / 路径带 \r
+$utf8NoBomLocal = New-Object System.Text.UTF8Encoding $false
+foreach ($shName in @("apply.sh", "rollback.sh")) {
+    $shPath = Join-Path $PkgDir ("bin\" + $shName)
+    if (Test-Path $shPath) {
+        $raw = [System.IO.File]::ReadAllText($shPath) -replace "`r`n", "`n" -replace "`r", "`n"
+        [System.IO.File]::WriteAllText($shPath, $raw, $utf8NoBomLocal)
+    }
+}
+
+# Docker 部署配套：升级时可覆盖服务器 Dockerfile（支持 prebuilt jar）
+New-Item -ItemType Directory -Force -Path (Join-Path $PkgDir "deploy") | Out-Null
+$Df = Join-Path $RepoRoot "deploy\Dockerfile.backend"
+if (Test-Path $Df) {
+    Copy-Item $Df (Join-Path $PkgDir "deploy\Dockerfile.backend") -Force
+}
 
 $ManifestLines = @(
     "name=$PkgName",
@@ -121,14 +140,48 @@ $ZipPath = Join-Path $OutputDir ($PkgName + ".zip")
 if (Test-Path -LiteralPath $ZipPath) {
     Remove-Item -LiteralPath $ZipPath -Force
 }
-Compress-Archive -LiteralPath $PkgDir -DestinationPath $ZipPath -Force
+
+# Compress-Archive 在 Windows 上常因文件被占用失败；改用系统 tar（Win10+ 自带）
+function Compress-UpgradeZip([string]$SourceDir, [string]$DestZip) {
+    $parent = Split-Path $SourceDir -Parent
+    $name = Split-Path $SourceDir -Leaf
+    if (Get-Command tar.exe -ErrorAction SilentlyContinue) {
+        # -a 按扩展名选 zip；-C 进入父目录再压文件夹，避免路径过长/占用问题
+        $tarArgs = @("-a", "-cf", $DestZip, "-C", $parent, $name)
+        & tar.exe @tarArgs
+        if ($LASTEXITCODE -ne 0) { throw "tar zip failed, exit=$LASTEXITCODE" }
+        return
+    }
+    # 回退：.NET ZipFile（比 Compress-Archive 更稳）
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    Start-Sleep -Seconds 2
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($SourceDir, $DestZip)
+}
+
+Write-Host ">>> zip package" -ForegroundColor Cyan
+Start-Sleep -Milliseconds 800
+$zipOk = $false
+for ($i = 1; $i -le 3; $i++) {
+    try {
+        if (Test-Path -LiteralPath $ZipPath) { Remove-Item -LiteralPath $ZipPath -Force }
+        Compress-UpgradeZip -SourceDir $PkgDir -DestZip $ZipPath
+        $zipOk = $true
+        break
+    } catch {
+        Write-Host ("zip attempt $i failed: " + $_.Exception.Message) -ForegroundColor Yellow
+        Start-Sleep -Seconds 2
+    }
+}
+if (-not $zipOk) {
+    throw "zip failed after retries (file locked?). Close Explorer preview / antivirus scan on dist\upgrades and retry."
+}
 
 Write-Host ""
 Write-Host "Upgrade package ready" -ForegroundColor Green
 Write-Host ("  dir: " + $PkgDir)
 Write-Host ("  zip: " + $ZipPath)
 
-# optional scp upload
+# optional scp upload + SSH remote apply
 $Upload = if ($Cfg -ne $null) { $Cfg.upload } else { $null }
 if (-not $SkipUpload -and $Upload -and $Upload.enabled) {
     $HostName = [string]$Upload.host
@@ -136,17 +189,69 @@ if (-not $SkipUpload -and $Upload -and $Upload.enabled) {
     $User = [string]$Upload.user
     $RemoteDir = [string]$Upload.remoteDir
     $Key = [string]$Upload.privateKeyPath
+    $HrHome = if ($Upload.hrHome) { [string]$Upload.hrHome } else { "/opt/hr-management/deploy" }
+    $DoRemoteApply = $false
+    if ($RemoteApply -eq "true") { $DoRemoteApply = $true }
+    elseif ($RemoteApply -eq "false") { $DoRemoteApply = $false }
+    elseif ($Upload.applyAfterUpload) { $DoRemoteApply = [bool]$Upload.applyAfterUpload }
+    if ($SkipRemoteApply) { $DoRemoteApply = $false }
+
     if (-not $HostName -or -not $User -or -not $RemoteDir) {
         Write-Host "upload config incomplete, skip" -ForegroundColor Yellow
     } else {
+        Write-Host (">>> mkdir remote " + $RemoteDir) -ForegroundColor Cyan
+        $SshBase = @("-p", "$Port", "-o", "StrictHostKeyChecking=accept-new")
+        if ($Key) { $SshBase = @("-i", $Key) + $SshBase }
+        & ssh @SshBase ($User + "@" + $HostName) ("mkdir -p " + $RemoteDir)
+        if ($LASTEXITCODE -ne 0) { throw "ssh mkdir failed" }
+
         Write-Host (">>> scp to " + $User + "@" + $HostName + ":" + $RemoteDir) -ForegroundColor Cyan
         $ScpArgs = @("-P", "$Port", $ZipPath, ($User + "@" + $HostName + ":" + $RemoteDir + "/"))
         if ($Key) { $ScpArgs = @("-i", $Key) + $ScpArgs }
         & scp @ScpArgs
         if ($LASTEXITCODE -ne 0) { throw "scp failed (install OpenSSH client)" }
         Write-Host "upload done" -ForegroundColor Green
+
+        if ($DoRemoteApply) {
+            $ZipName = Split-Path $ZipPath -Leaf
+            Write-Host (">>> SSH remote apply HR_HOME=" + $HrHome) -ForegroundColor Cyan
+            # 必须用 LF：PowerShell here-string 默认 CRLF，会导致 bash 报 set: - 与路径带 \r
+            $RemoteLines = @(
+                "set -euo pipefail",
+                "cd '$RemoteDir'",
+                "unzip -o '$ZipName'",
+                "cd '$PkgName'",
+                "sed -i 's/\r`$//' bin/*.sh 2>/dev/null || true",
+                "chmod +x bin/*.sh",
+                "HR_HOME='$HrHome' HR_USE_DOCKER=1 ./bin/apply.sh"
+            )
+            $RemoteCmd = ($RemoteLines -join "`n") + "`n"
+            $RemoteCmd = $RemoteCmd -replace "`r", ""
+
+            $TmpSh = Join-Path $env:TEMP ("hr-remote-apply-" + [guid]::NewGuid().ToString("N") + ".sh")
+            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllText($TmpSh, $RemoteCmd, $utf8NoBom)
+            try {
+                $RemoteSh = ($RemoteDir.TrimEnd("/") + "/_hr_remote_apply.sh")
+                $ScpSh = @("-P", "$Port", $TmpSh, ($User + "@" + $HostName + ":" + $RemoteSh))
+                if ($Key) { $ScpSh = @("-i", $Key) + $ScpSh }
+                & scp @ScpSh
+                if ($LASTEXITCODE -ne 0) { throw "scp remote apply script failed" }
+                & ssh @SshBase ($User + "@" + $HostName) ("bash '" + $RemoteSh + "'")
+                if ($LASTEXITCODE -ne 0) { throw "remote apply failed" }
+                Write-Host "remote apply done" -ForegroundColor Green
+            } finally {
+                Remove-Item -LiteralPath $TmpSh -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 }
 
 Write-Host ""
-Write-Host "Next: unzip on server and run bin/apply.sh or bin/apply.ps1" -ForegroundColor Cyan
+if (-not $SkipUpload -and $Upload -and $Upload.enabled -and (
+        ($RemoteApply -eq "true") -or ($Upload.applyAfterUpload -and $RemoteApply -ne "false")
+    ) -and -not $SkipRemoteApply) {
+    Write-Host "Done: package uploaded and applied on server." -ForegroundColor Cyan
+} else {
+    Write-Host "Next: unzip on server and run: HR_HOME=/opt/hr-management/deploy HR_USE_DOCKER=1 ./bin/apply.sh" -ForegroundColor Cyan
+}

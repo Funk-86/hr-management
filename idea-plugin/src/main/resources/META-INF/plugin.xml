@@ -17,8 +17,8 @@
             <add-to-group group-id="ToolsMenu" anchor="last"/>
             <action id="HrUpgrade.PackUpgrade"
                     class="org.example.hrupgrade.PackUpgradeAction"
-                    text="生成升级包"
-                    description="一键 Maven/前端构建并打包为跨平台升级包">
+                    text="生成升级包 / 远程更新"
+                    description="本机打包，可选 SCP 上传并由 SSH 在服务器 Docker 应用">
                 <keyboard-shortcut first-keystroke="control alt shift U" keymap="$default"/>
             </action>
             <action id="HrUpgrade.OpenConfig"

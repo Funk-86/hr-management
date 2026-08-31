@@ -15,8 +15,10 @@ CONFIG=""
 BACKEND_ONLY=0
 FRONTEND_ONLY=0
 SKIP_UPLOAD=0
+SKIP_REMOTE_APPLY=0
 FORCE_BACKEND=""
 FORCE_FRONTEND=""
+FORCE_REMOTE_APPLY=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -24,8 +26,10 @@ while [[ $# -gt 0 ]]; do
     --backend-only) BACKEND_ONLY=1; shift ;;
     --frontend-only) FRONTEND_ONLY=1; shift ;;
     --skip-upload) SKIP_UPLOAD=1; shift ;;
+    --skip-remote-apply) SKIP_REMOTE_APPLY=1; shift ;;
     --include-backend) FORCE_BACKEND="$2"; shift 2 ;;
     --include-frontend) FORCE_FRONTEND="$2"; shift 2 ;;
+    --remote-apply) FORCE_REMOTE_APPLY="$2"; shift 2 ;;
     *) echo "未知参数: $1"; exit 1 ;;
   esac
 done
@@ -120,7 +124,11 @@ cp -f "$SCRIPT_DIR/templates/apply.sh" "$PKG_DIR/bin/apply.sh"
 cp -f "$SCRIPT_DIR/templates/apply.ps1" "$PKG_DIR/bin/apply.ps1"
 cp -f "$SCRIPT_DIR/templates/rollback.sh" "$PKG_DIR/bin/rollback.sh"
 cp -f "$SCRIPT_DIR/templates/rollback.ps1" "$PKG_DIR/bin/rollback.ps1"
-chmod +x "$PKG_DIR/bin/"*.sh
+cp -f "$SCRIPT_DIR/templates/README.txt" "$PKG_DIR/README.txt"
+mkdir -p "$PKG_DIR/deploy"
+if [[ -f "$REPO_ROOT/deploy/Dockerfile.backend" ]]; then
+  cp -f "$REPO_ROOT/deploy/Dockerfile.backend" "$PKG_DIR/deploy/Dockerfile.backend"
+fi
 
 cat > "$PKG_DIR/MANIFEST.txt" <<EOF
 name=$PKG_NAME
@@ -128,20 +136,22 @@ created=$(date '+%Y-%m-%d %H:%M:%S')
 includeBackend=$INCLUDE_BACKEND
 includeFrontend=$INCLUDE_FRONTEND
 repo=$REPO_ROOT
-host=$(hostname)
+host=$(hostname 2>/dev/null || echo unknown)
 EOF
+chmod +x "$PKG_DIR/bin/"*.sh
 
 cat > "$PKG_DIR/README.txt" <<'EOF'
 HR 升级包使用说明
 ================
-1. 将本目录或同名 zip 上传到服务器应用目录旁（如 /opt/hr/upgrades/）
+1. 将 zip 上传到服务器（如 /opt/hr-management/upgrades/）
 2. 解压后进入目录
-3. Linux:   chmod +x bin/*.sh && HR_HOME=/opt/hr ./bin/apply.sh
-   Windows: $env:HR_HOME='C:\hr'; .\bin\apply.ps1
+3. Docker 部署:
+   chmod +x bin/*.sh
+   HR_HOME=/opt/hr-management/deploy HR_USE_DOCKER=1 ./bin/apply.sh
 4. 可选环境变量:
-   HR_HOME       应用根目录
-   HR_SERVICE    systemd / Windows 服务名
-   HR_USE_DOCKER=1  使用 docker compose 停启
+   HR_HOME         含 docker-compose.yml 的目录（一般为 .../deploy）
+   HR_SERVICE      systemd 服务名
+   HR_USE_DOCKER=1 使用 docker compose 停启/重建
 EOF
 
 ZIP_PATH="$OUTPUT_DIR/$PKG_NAME.zip"
@@ -162,22 +172,55 @@ echo "  目录: $PKG_DIR"
 echo "  压缩: $ZIP_PATH"
 
 UPLOAD_ENABLED="$(json_get "$CFG" upload.enabled false)"
+DO_REMOTE_APPLY=0
 if [[ "$SKIP_UPLOAD" != "1" && "$UPLOAD_ENABLED" == "true" ]]; then
   HOST="$(json_get "$CFG" upload.host "")"
   PORT="$(json_get "$CFG" upload.port 22)"
   USER="$(json_get "$CFG" upload.user "")"
   REMOTE="$(json_get "$CFG" upload.remoteDir "")"
   KEY="$(json_get "$CFG" upload.privateKeyPath "")"
+  HR_HOME_REMOTE="$(json_get "$CFG" upload.hrHome "/opt/hr-management/deploy")"
+  APPLY_CFG="$(json_get "$CFG" upload.applyAfterUpload false)"
+  if [[ "$FORCE_REMOTE_APPLY" == "true" ]]; then DO_REMOTE_APPLY=1
+  elif [[ "$FORCE_REMOTE_APPLY" == "false" ]]; then DO_REMOTE_APPLY=0
+  elif [[ "$APPLY_CFG" == "true" ]]; then DO_REMOTE_APPLY=1
+  fi
+  if [[ "$SKIP_REMOTE_APPLY" == "1" ]]; then DO_REMOTE_APPLY=0; fi
+
   if [[ -z "$HOST" || -z "$USER" || -z "$REMOTE" ]]; then
     echo "upload 配置不完整，跳过上传"
   else
-    echo ">>> SCP 上传到 ${USER}@${HOST}:$REMOTE"
+    SSH_OPTS=(-p "$PORT" -o StrictHostKeyChecking=accept-new)
     SCP_OPTS=(-P "$PORT")
-    [[ -n "$KEY" ]] && SCP_OPTS+=(-i "$KEY")
+    [[ -n "$KEY" ]] && SSH_OPTS+=(-i "$KEY") && SCP_OPTS+=(-i "$KEY")
+
+    echo ">>> 准备远程目录 ${USER}@${HOST}:$REMOTE"
+    ssh "${SSH_OPTS[@]}" "${USER}@${HOST}" "mkdir -p '$REMOTE'"
+
+    echo ">>> SCP 上传到 ${USER}@${HOST}:$REMOTE"
     scp "${SCP_OPTS[@]}" "$ZIP_PATH" "${USER}@${HOST}:${REMOTE}/"
     echo "上传完成"
+
+    if [[ "$DO_REMOTE_APPLY" == "1" ]]; then
+      ZIP_NAME="$(basename "$ZIP_PATH")"
+      echo ">>> SSH 远程 apply HR_HOME=$HR_HOME_REMOTE"
+      ssh "${SSH_OPTS[@]}" "${USER}@${HOST}" bash -s <<EOF
+set -e
+cd '$REMOTE'
+unzip -o '$ZIP_NAME'
+cd '$PKG_NAME'
+chmod +x bin/*.sh
+HR_HOME='$HR_HOME_REMOTE' HR_USE_DOCKER=1 ./bin/apply.sh
+EOF
+      echo "远程应用完成"
+    fi
   fi
 fi
 
 echo ""
-echo "下一步: 把压缩包拷到服务器解压后执行 bin/apply.sh 或 bin/apply.ps1"
+if [[ "$DO_REMOTE_APPLY" == "1" ]]; then
+  echo "完成：已上传并在服务器应用升级包。"
+else
+  echo "下一步: 服务器解压后执行"
+  echo "  HR_HOME=/opt/hr-management/deploy HR_USE_DOCKER=1 ./bin/apply.sh"
+fi

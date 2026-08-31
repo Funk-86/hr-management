@@ -7,18 +7,25 @@ import lombok.RequiredArgsConstructor;
 import org.example.hrmanagement.common.dto.PageQuery;
 import org.example.hrmanagement.common.exception.BusinessException;
 import org.example.hrmanagement.common.result.PageResult;
+import org.example.hrmanagement.common.util.SecurityUtil;
+import org.example.hrmanagement.module.attendance.entity.Attendance;
+import org.example.hrmanagement.module.attendance.mapper.AttendanceMapper;
 import org.example.hrmanagement.module.employee.entity.Employee;
 import org.example.hrmanagement.module.employee.mapper.EmployeeMapper;
 import org.example.hrmanagement.module.position.entity.Position;
 import org.example.hrmanagement.module.position.mapper.PositionMapper;
+import org.example.hrmanagement.module.salary.dto.AttendanceDeductRuleUpdateDTO;
 import org.example.hrmanagement.module.salary.dto.SalaryCreateDTO;
 import org.example.hrmanagement.module.salary.dto.SalaryGenerateDTO;
 import org.example.hrmanagement.module.salary.dto.SalaryUpdateDTO;
+import org.example.hrmanagement.module.salary.entity.AttendanceDeductRule;
 import org.example.hrmanagement.module.salary.entity.Salary;
 import org.example.hrmanagement.module.salary.entity.SalaryBaseDict;
+import org.example.hrmanagement.module.salary.mapper.AttendanceDeductRuleMapper;
 import org.example.hrmanagement.module.salary.mapper.SalaryBaseDictMapper;
 import org.example.hrmanagement.module.salary.mapper.SalaryMapper;
 import org.example.hrmanagement.module.salary.service.SalaryService;
+import org.example.hrmanagement.module.salary.vo.AttendanceDeductRuleVO;
 import org.example.hrmanagement.module.salary.vo.SalaryPreviewVO;
 import org.example.hrmanagement.module.salary.vo.SalaryVO;
 import org.example.hrmanagement.module.task.entity.TaskAssignee;
@@ -33,6 +40,7 @@ import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -44,12 +52,18 @@ import java.util.stream.Collectors;
 public class SalaryServiceImpl implements SalaryService {
 
     private static final DateTimeFormatter MONTH_FMT = DateTimeFormatter.ofPattern("yyyy-MM");
+    private static final int STATUS_LATE = 2;
+    private static final int STATUS_ABSENT = 4;
+    private static final int STATUS_LEAVE = 5;
+    private static final int STATUS_FIELD = 6;
 
     private final SalaryMapper salaryMapper;
     private final EmployeeMapper employeeMapper;
     private final PositionMapper positionMapper;
     private final SalaryBaseDictMapper salaryBaseDictMapper;
     private final TaskAssigneeMapper taskAssigneeMapper;
+    private final AttendanceMapper attendanceMapper;
+    private final AttendanceDeductRuleMapper deductRuleMapper;
 
     @Override
     public PageResult<SalaryVO> getSalaryAll(PageQuery page) {
@@ -125,6 +139,61 @@ public class SalaryServiceImpl implements SalaryService {
     }
 
     @Override
+    public PageResult<SalaryVO> getMyPaidSalaries(PageQuery page, String salaryMonth) {
+        Long employeeId = SecurityUtil.requireEmployeeId();
+        LambdaQueryWrapper<Salary> wrapper = new LambdaQueryWrapper<Salary>()
+                .eq(Salary::getEmployeeId, employeeId)
+                .eq(Salary::getStatus, 1)
+                .orderByDesc(Salary::getSalaryMonth);
+        if (StringUtils.hasText(salaryMonth)) {
+            wrapper.eq(Salary::getSalaryMonth, salaryMonth.trim());
+        }
+        IPage<Salary> iPage = salaryMapper.selectPage(
+                new Page<>(page.getPageNum(), page.getPageSize()), wrapper);
+        List<Salary> list = iPage.getRecords();
+        if (list == null || list.isEmpty()) {
+            return PageResult.empty();
+        }
+        Employee emp = employeeMapper.selectById(employeeId);
+        Set<Long> positionIds = list.stream()
+                .map(Salary::getPositionId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, String> positionNames = positionIds.isEmpty()
+                ? Map.of()
+                : positionMapper.selectBatchIds(positionIds).stream()
+                .collect(Collectors.toMap(Position::getId, Position::getPositionName, (a, b) -> a));
+
+        List<SalaryVO> vos = list.stream().map(salary -> toSalaryVO(
+                salary,
+                emp != null ? emp.getName() : null,
+                emp != null ? emp.getEmpNo() : null,
+                salary.getPositionId() == null ? null : positionNames.get(salary.getPositionId())
+        )).collect(Collectors.toList());
+
+        PageResult<SalaryVO> result = new PageResult<>();
+        result.setRecords(vos);
+        result.setTotal(iPage.getTotal());
+        result.setPageNum(iPage.getCurrent());
+        result.setPageSize(iPage.getSize());
+        result.setPages(iPage.getPages());
+        return result;
+    }
+
+    @Override
+    public SalaryVO getMySalaryById(Long id) {
+        Long employeeId = SecurityUtil.requireEmployeeId();
+        SalaryVO vo = getSalaryById(id);
+        if (!Objects.equals(vo.getEmployeeId(), employeeId)) {
+            throw new BusinessException("无权查看该薪资条");
+        }
+        if (vo.getStatus() == null || vo.getStatus() != 1) {
+            throw new BusinessException("仅可查看已发放的薪资条");
+        }
+        return vo;
+    }
+
+    @Override
     public SalaryPreviewVO previewGenerate(SalaryGenerateDTO dto) {
         Employee employee = requireEmployee(dto.getEmployeeId());
         YearMonth month = parseMonth(dto.getSalaryMonth());
@@ -135,7 +204,6 @@ public class SalaryServiceImpl implements SalaryService {
         vo.setEmployeeName(employee.getName());
         vo.setSalaryMonth(month.format(MONTH_FMT));
         vo.setPositionId(employee.getPositionId());
-        vo.setDeduction(BigDecimal.ZERO);
 
         String tip = null;
         BigDecimal base = BigDecimal.ZERO;
@@ -164,12 +232,110 @@ public class SalaryServiceImpl implements SalaryService {
         }
 
         BigDecimal taskBonus = sumTaskBonus(employee.getId(), month);
+        DeductCalc deductCalc = calcAttendanceDeduction(employee.getId(), month);
+
         vo.setBaseSalary(base);
         vo.setTaskBonus(taskBonus);
         vo.setBonus(taskBonus);
-        vo.setActualSalary(base.add(taskBonus));
+        vo.setDeduction(deductCalc.total);
+        vo.setDeductDetail(deductCalc.detail);
+        vo.setActualSalary(base.add(taskBonus).subtract(deductCalc.total));
         vo.setTip(tip);
         return vo;
+    }
+
+    @Override
+    public List<AttendanceDeductRuleVO> listDeductRules() {
+        return deductRuleMapper.selectList(
+                new LambdaQueryWrapper<AttendanceDeductRule>().orderByAsc(AttendanceDeductRule::getId)
+        ).stream().map(this::toDeductRuleVO).toList();
+    }
+
+    @Override
+    public void updateDeductRule(Long id, AttendanceDeductRuleUpdateDTO dto) {
+        if (id == null) {
+            throw new BusinessException("id不能为空");
+        }
+        AttendanceDeductRule existing = deductRuleMapper.selectById(id);
+        if (existing == null) {
+            throw new BusinessException("扣款规则不存在");
+        }
+        existing.setRuleCode(dto.getRuleCode());
+        existing.setUnitAmount(dto.getUnitAmount());
+        existing.setEnabled(dto.getEnabled());
+        existing.setRemark(dto.getRemark());
+        deductRuleMapper.updateById(existing);
+    }
+
+    private DeductCalc calcAttendanceDeduction(Long employeeId, YearMonth month) {
+        LocalDate start = month.atDay(1);
+        LocalDate end = month.atEndOfMonth();
+        List<Attendance> records = attendanceMapper.selectList(
+                new LambdaQueryWrapper<Attendance>()
+                        .eq(Attendance::getEmployeeId, employeeId)
+                        .ge(Attendance::getAttendDate, start)
+                        .le(Attendance::getAttendDate, end)
+        );
+
+        Map<String, AttendanceDeductRule> rules = deductRuleMapper.selectList(
+                new LambdaQueryWrapper<AttendanceDeductRule>().eq(AttendanceDeductRule::getEnabled, 1)
+        ).stream().collect(Collectors.toMap(AttendanceDeductRule::getRuleCode, r -> r, (a, b) -> a));
+
+        long lateDays = records.stream().filter(a -> Objects.equals(a.getStatus(), STATUS_LATE)).count();
+        long absentDays = records.stream().filter(a -> Objects.equals(a.getStatus(), STATUS_ABSENT)).count();
+        long missingDays = records.stream().filter(a -> {
+            Integer status = a.getStatus();
+            if (Objects.equals(status, STATUS_LEAVE) || Objects.equals(status, STATUS_FIELD)) {
+                return false;
+            }
+            return a.getCheckIn() == null || a.getCheckOut() == null;
+        }).count();
+
+        BigDecimal total = BigDecimal.ZERO;
+        List<String> parts = new ArrayList<>();
+
+        AttendanceDeductRule lateRule = rules.get("LATE");
+        if (lateRule != null && lateDays > 0) {
+            BigDecimal amt = nz(lateRule.getUnitAmount()).multiply(BigDecimal.valueOf(lateDays));
+            total = total.add(amt);
+            parts.add("迟到" + lateDays + "天×" + lateRule.getUnitAmount() + "=" + amt);
+        }
+        AttendanceDeductRule absentRule = rules.get("ABSENT");
+        if (absentRule != null && absentDays > 0) {
+            BigDecimal amt = nz(absentRule.getUnitAmount()).multiply(BigDecimal.valueOf(absentDays));
+            total = total.add(amt);
+            parts.add("缺勤" + absentDays + "天×" + absentRule.getUnitAmount() + "=" + amt);
+        }
+        AttendanceDeductRule missingRule = rules.get("MISSING_CHECK");
+        if (missingRule != null && missingDays > 0) {
+            BigDecimal amt = nz(missingRule.getUnitAmount()).multiply(BigDecimal.valueOf(missingDays));
+            total = total.add(amt);
+            parts.add("缺卡" + missingDays + "天×" + missingRule.getUnitAmount() + "=" + amt);
+        }
+
+        DeductCalc calc = new DeductCalc();
+        calc.total = total;
+        calc.detail = parts.isEmpty() ? "无自动扣款" : String.join("；", parts);
+        return calc;
+    }
+
+    private AttendanceDeductRuleVO toDeductRuleVO(AttendanceDeductRule rule) {
+        AttendanceDeductRuleVO vo = new AttendanceDeductRuleVO();
+        vo.setId(rule.getId());
+        vo.setRuleCode(rule.getRuleCode());
+        vo.setUnitAmount(rule.getUnitAmount());
+        vo.setEnabled(rule.getEnabled());
+        vo.setRemark(rule.getRemark());
+        return vo;
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v != null ? v : BigDecimal.ZERO;
+    }
+
+    private static class DeductCalc {
+        private BigDecimal total = BigDecimal.ZERO;
+        private String detail;
     }
 
     @Override

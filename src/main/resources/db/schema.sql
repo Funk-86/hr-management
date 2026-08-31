@@ -4,6 +4,9 @@
 -- 字符集: utf8mb4
 -- ============================================================
 
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
+
 CREATE DATABASE IF NOT EXISTS hr_management
     DEFAULT CHARACTER SET utf8mb4
     DEFAULT COLLATE utf8mb4_unicode_ci;
@@ -24,7 +27,9 @@ CREATE TABLE sys_department (
     sort_order  INT          DEFAULT 0 COMMENT '排序',
     status      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：0-禁用 1-启用',
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by  BIGINT       DEFAULT NULL,
     updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by  BIGINT       DEFAULT NULL,
     deleted     TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除：0-未删 1-已删',
     PRIMARY KEY (id),
     UNIQUE KEY uk_dept_code (dept_code),
@@ -40,7 +45,9 @@ CREATE TABLE sys_position (
     level         TINYINT      DEFAULT 1 COMMENT '职级：1-普通 2-主管 3-经理 4-总监',
     status        TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：0-禁用 1-启用',
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by    BIGINT       DEFAULT NULL,
     updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by    BIGINT       DEFAULT NULL,
     deleted       TINYINT      NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
     UNIQUE KEY uk_position_code (position_code),
@@ -70,7 +77,9 @@ CREATE TABLE hr_employee (
     avatar          VARCHAR(512) DEFAULT NULL COMMENT '头像 OSS 对象 Key',
     remark          VARCHAR(500) DEFAULT NULL COMMENT '备注',
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by      BIGINT       DEFAULT NULL,
     updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by      BIGINT       DEFAULT NULL,
     deleted         TINYINT      NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
     UNIQUE KEY uk_emp_no (emp_no),
@@ -92,7 +101,9 @@ CREATE TABLE sys_user (
     status      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：0-禁用 1-启用',
     last_login  DATETIME     DEFAULT NULL COMMENT '最后登录时间',
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by  BIGINT       DEFAULT NULL,
     updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by  BIGINT       DEFAULT NULL,
     deleted     TINYINT      NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
     UNIQUE KEY uk_username (username),
@@ -106,7 +117,9 @@ CREATE TABLE sys_role (
     description VARCHAR(255) DEFAULT NULL COMMENT '描述',
     status      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：0-禁用 1-启用',
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by  BIGINT       DEFAULT NULL,
     updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by  BIGINT       DEFAULT NULL,
     deleted     TINYINT      NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
     UNIQUE KEY uk_role_code (role_code)
@@ -123,7 +136,9 @@ CREATE TABLE sys_permission (
     sort_order  INT          DEFAULT 0,
     status      TINYINT      NOT NULL DEFAULT 1,
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by  BIGINT       DEFAULT NULL,
     updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by  BIGINT       DEFAULT NULL,
     deleted     TINYINT      NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
     UNIQUE KEY uk_perm_code (perm_code)
@@ -155,11 +170,13 @@ CREATE TABLE hr_attendance (
     attend_date  DATE        NOT NULL COMMENT '考勤日期',
     check_in     TIME        DEFAULT NULL COMMENT '上班打卡时间',
     check_out    TIME        DEFAULT NULL COMMENT '下班打卡时间',
-    status       TINYINT     NOT NULL DEFAULT 1 COMMENT '状态：1-正常 2-迟到 3-早退 4-缺勤 5-请假',
+    status       TINYINT     NOT NULL DEFAULT 1 COMMENT '状态：1-正常 2-迟到 3-早退 4-缺勤 5-请假 6-外勤',
     work_hours   DECIMAL(4,1) DEFAULT NULL COMMENT '工作时长（小时）',
     remark       VARCHAR(255) DEFAULT NULL COMMENT '备注',
     created_at   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by   BIGINT      DEFAULT NULL,
     updated_at   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by   BIGINT      DEFAULT NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uk_emp_date (employee_id, attend_date),
     KEY idx_attend_date (attend_date)
@@ -176,7 +193,9 @@ CREATE TABLE hr_leave_type (
     max_days    INT          DEFAULT NULL COMMENT '每年最大天数，NULL表示不限',
     status      TINYINT      NOT NULL DEFAULT 1,
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by  BIGINT       DEFAULT NULL,
     updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by  BIGINT       DEFAULT NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uk_type_code (type_code)
 ) ENGINE=InnoDB COMMENT='假期类型表';
@@ -194,11 +213,30 @@ CREATE TABLE hr_leave_request (
     approve_time  DATETIME     DEFAULT NULL COMMENT '审批时间',
     approve_remark VARCHAR(255) DEFAULT NULL COMMENT '审批备注',
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by    BIGINT       DEFAULT NULL,
     updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by    BIGINT       DEFAULT NULL,
     PRIMARY KEY (id),
     KEY idx_employee_id (employee_id),
     KEY idx_status (status)
 ) ENGINE=InnoDB COMMENT='请假申请表';
+
+CREATE TABLE hr_leave_balance (
+    id            BIGINT        NOT NULL AUTO_INCREMENT COMMENT '余额ID',
+    employee_id   BIGINT        NOT NULL COMMENT '员工ID',
+    leave_type_id BIGINT        NOT NULL COMMENT '假期类型ID',
+    year          INT           NOT NULL COMMENT '年度',
+    quota_days    DECIMAL(6,1)  NOT NULL COMMENT '年度额度',
+    used_days     DECIMAL(6,1)  NOT NULL DEFAULT 0 COMMENT '已通过占用',
+    pending_days  DECIMAL(6,1)  NOT NULL DEFAULT 0 COMMENT '待审批占用',
+    created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by    BIGINT        DEFAULT NULL,
+    updated_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by    BIGINT        DEFAULT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_emp_type_year (employee_id, leave_type_id, year),
+    KEY idx_employee_year (employee_id, year)
+) ENGINE=InnoDB COMMENT='假期余额台账';
 
 -- ------------------------------------------------------------
 -- 6. 薪资管理（简化版）
@@ -218,10 +256,89 @@ CREATE TABLE hr_salary (
     pay_date      DATE          DEFAULT NULL COMMENT '发放日期',
     remark        VARCHAR(255)  DEFAULT NULL,
     created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by    BIGINT        DEFAULT NULL,
     updated_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by    BIGINT        DEFAULT NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uk_emp_month (employee_id, salary_month)
 ) ENGINE=InnoDB COMMENT='薪资表';
+
+CREATE TABLE hr_attendance_deduct_rule (
+    id           BIGINT         NOT NULL AUTO_INCREMENT,
+    rule_code    VARCHAR(32)    NOT NULL COMMENT 'LATE/ABSENT/MISSING_CHECK',
+    unit_amount  DECIMAL(10,2)  NOT NULL DEFAULT 0 COMMENT '每次/每天扣款金额',
+    enabled      TINYINT        NOT NULL DEFAULT 1 COMMENT '0禁用 1启用',
+    remark       VARCHAR(255)   DEFAULT NULL,
+    created_at   DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by   BIGINT         DEFAULT NULL,
+    updated_at   DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by   BIGINT         DEFAULT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_rule_code (rule_code)
+) ENGINE=InnoDB COMMENT='考勤扣款规则';
+
+CREATE TABLE hr_overtime_request (
+    id             BIGINT        NOT NULL AUTO_INCREMENT,
+    employee_id    BIGINT        NOT NULL,
+    work_date      DATE          NOT NULL,
+    start_time     TIME          NOT NULL,
+    end_time       TIME          NOT NULL,
+    hours          DECIMAL(4,1)  NOT NULL,
+    reason         VARCHAR(500)  NOT NULL,
+    status         TINYINT       NOT NULL DEFAULT 0 COMMENT '0待审 1通过 2拒绝 3撤销',
+    approver_id    BIGINT        DEFAULT NULL,
+    approve_time   DATETIME      DEFAULT NULL,
+    approve_remark VARCHAR(255)  DEFAULT NULL,
+    created_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by     BIGINT        DEFAULT NULL,
+    updated_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by     BIGINT        DEFAULT NULL,
+    PRIMARY KEY (id),
+    KEY idx_ot_emp (employee_id),
+    KEY idx_ot_status (status)
+) ENGINE=InnoDB COMMENT='加班申请';
+
+CREATE TABLE hr_attendance_appeal (
+    id             BIGINT        NOT NULL AUTO_INCREMENT,
+    employee_id    BIGINT        NOT NULL,
+    attend_date    DATE          NOT NULL,
+    attendance_id  BIGINT        DEFAULT NULL,
+    from_status    TINYINT       DEFAULT NULL,
+    to_status      TINYINT       NOT NULL,
+    check_in       TIME          DEFAULT NULL,
+    check_out      TIME          DEFAULT NULL,
+    reason         VARCHAR(500)  NOT NULL,
+    status         TINYINT       NOT NULL DEFAULT 0 COMMENT '0待审 1通过 2拒绝 3撤销',
+    approver_id    BIGINT        DEFAULT NULL,
+    approve_time   DATETIME      DEFAULT NULL,
+    approve_remark VARCHAR(255)  DEFAULT NULL,
+    created_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by     BIGINT        DEFAULT NULL,
+    updated_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by     BIGINT        DEFAULT NULL,
+    PRIMARY KEY (id),
+    KEY idx_appeal_emp (employee_id),
+    KEY idx_appeal_status (status)
+) ENGINE=InnoDB COMMENT='考勤异常申诉';
+
+CREATE TABLE hr_field_work_request (
+    id             BIGINT        NOT NULL AUTO_INCREMENT,
+    employee_id    BIGINT        NOT NULL,
+    work_date      DATE          NOT NULL,
+    location       VARCHAR(255)  NOT NULL,
+    reason         VARCHAR(500)  NOT NULL,
+    status         TINYINT       NOT NULL DEFAULT 0 COMMENT '0待审 1通过 2拒绝 3撤销',
+    approver_id    BIGINT        DEFAULT NULL,
+    approve_time   DATETIME      DEFAULT NULL,
+    approve_remark VARCHAR(255)  DEFAULT NULL,
+    created_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by     BIGINT        DEFAULT NULL,
+    updated_at     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by     BIGINT        DEFAULT NULL,
+    PRIMARY KEY (id),
+    KEY idx_fw_emp (employee_id),
+    KEY idx_fw_status (status)
+) ENGINE=InnoDB COMMENT='外勤申请';
 
 CREATE TABLE hr_salary_base_dict (
     id            BIGINT        NOT NULL AUTO_INCREMENT,
@@ -276,6 +393,9 @@ CREATE TABLE sys_operation_log (
     error_msg   TEXT         DEFAULT NULL,
     duration    BIGINT       DEFAULT NULL COMMENT '耗时（毫秒）',
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by  BIGINT       DEFAULT NULL,
+    updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by  BIGINT       DEFAULT NULL,
     PRIMARY KEY (id),
     KEY idx_user_id (user_id),
     KEY idx_created_at (created_at)
@@ -533,7 +653,9 @@ CREATE TABLE hr_employee_face (
     enrolled_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     status        TINYINT      NOT NULL DEFAULT 1 COMMENT '0-禁用 1-启用',
     created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by    BIGINT       DEFAULT NULL,
     updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by    BIGINT       DEFAULT NULL,
     deleted       TINYINT      NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
     UNIQUE KEY uk_employee_id (employee_id)

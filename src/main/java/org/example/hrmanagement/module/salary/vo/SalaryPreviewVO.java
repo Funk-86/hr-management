@@ -19,4 +19,6 @@ public class SalaryPreviewVO {
     private BigDecimal actualSalary;
     /** 提示：如未配置底薪字典 */
     private String tip;
+    /** 自动扣款明细说明 */
+    private String deductDetail;
 }
