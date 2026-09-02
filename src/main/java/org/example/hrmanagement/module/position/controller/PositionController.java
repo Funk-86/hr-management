@@ -20,14 +20,15 @@ public class PositionController {
     @Autowired
     private PositionService positionService;
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER')")
+    // 员工申请调岗时需按部门拉取岗位列表；写操作仍限制 HR
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER','EMPLOYEE')")
     @GetMapping
     public Result<List<PositionVO>> listByDeptId(@RequestParam Long deptId) {
         List<PositionVO> list = positionService.listByDeptId(deptId);
         return Result.success(list);
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER','EMPLOYEE')")
     @GetMapping("/{id}")
     public Result<PositionVO> getById(@PathVariable Long id) {
         return Result.success(positionService.getById(id));

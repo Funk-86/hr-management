@@ -23,14 +23,15 @@ public class DepartmentController {
     private DepartmentService departmentService;
 
     @Operation(summary = "部门树形列表")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER')")
+    // 入转调离/文档等员工自助页需要读部门树；写操作仍限制 HR
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER','EMPLOYEE')")
     @GetMapping
     public Result<List<DepartmentTreeVO>> list(){
         return Result.success(departmentService.listTree());
     }
 
     @Operation(summary = "查询单个部门")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER','EMPLOYEE')")
     @GetMapping ("/{id}")
     public Result<DepartmentTreeVO> getById(@PathVariable Long id){
         return Result.success(departmentService.getById(id));

@@ -1,4 +1,4 @@
-# 在 Windows 服务器解压升级包后执行：.\bin\apply.ps1
+﻿# 在 Windows 服务器解压升级包后执行：.\bin\apply.ps1
 # 环境变量（可选）：
 #   HR_HOME     应用根目录
 #   HR_SERVICE  Windows 服务名；为空则尝试 docker compose

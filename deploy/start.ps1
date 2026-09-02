@@ -1,4 +1,4 @@
-# HR 系统 Docker 一键启动（Windows PowerShell）
+﻿# HR 系统 Docker 一键启动（Windows PowerShell）
 # 用法: cd deploy && .\start.ps1
 
 $ErrorActionPreference = "Stop"
