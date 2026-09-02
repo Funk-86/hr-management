@@ -199,8 +199,14 @@ mvn -DskipTests package
 | `SPRING_DATASOURCE_URL` | MySQL JDBC 连接串 |
 | `SPRING_DATASOURCE_USERNAME` | 数据库用户名 |
 | `SPRING_DATASOURCE_PASSWORD` | 数据库密码 |
-| `JWT_SECRET` | JWT 密钥，**至少 32 字符**，务必更换 |
+| `JWT_SECRET` | JWT 密钥，**至少 32 字符**，务必更换；生产环境若使用内置默认值，应用将**拒绝启动** |
 | `APP_CORS_ORIGIN` | 前端访问域名，如 `https://hr.example.com` |
+
+**安全说明（v1.0.4+）：**
+
+- 登录/改密接口请求体**不会**写入 info 日志。
+- 站内消息 SSE 使用短时一次性 `ticket`（`POST /notifications/stream-ticket` 签发），**不再**在 URL 中传递 JWT。
+- Docker 部署请复制 [`deploy/.env.example`](deploy/.env.example) 为 `deploy/.env` 并设置强随机 `JWT_SECRET`。
 
 3. 启动示例：
 

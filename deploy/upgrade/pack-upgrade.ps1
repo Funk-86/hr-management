@@ -1,4 +1,4 @@
-﻿# 一键生成 HR 升级包（Windows）
+# 一键生成 HR 升级包（Windows）
 # 用法（在仓库根或本目录）:
 #   .\deploy\upgrade\pack-upgrade.ps1
 #   .\deploy\upgrade\pack-upgrade.ps1 -BackendOnly

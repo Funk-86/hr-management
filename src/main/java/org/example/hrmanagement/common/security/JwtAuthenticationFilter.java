@@ -82,16 +82,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     /**
-     * 优先 Authorization: Bearer；SSE（EventSource）无法自定义 Header，兼容 query ?token=
+     * 优先 Authorization: Bearer
      */
     private String resolveToken(HttpServletRequest request) {
         String authorizationHeader = request.getHeader("Authorization");
         if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
             return authorizationHeader.substring(7);
-        }
-        String queryToken = request.getParameter("token");
-        if (queryToken != null && !queryToken.isBlank()) {
-            return queryToken.trim();
         }
         return null;
     }

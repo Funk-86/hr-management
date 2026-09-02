@@ -11,6 +11,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -23,9 +24,43 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class NotificationSseHub {
 
     private static final long SSE_TIMEOUT_MS = 30L * 60 * 1000;
+    private static final long TICKET_TTL_MS = 60_000L;
 
     private final ObjectMapper objectMapper;
     private final Map<Long, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    private final Map<String, TicketEntry> tickets = new ConcurrentHashMap<>();
+
+    private record TicketEntry(Long userId, long expiresAtMs) {}
+
+    /** 签发一次性 SSE 连接 ticket */
+    public String createTicket(Long userId) {
+        purgeExpiredTickets();
+        String ticket = UUID.randomUUID().toString().replace("-", "");
+        tickets.put(ticket, new TicketEntry(userId, System.currentTimeMillis() + TICKET_TTL_MS));
+        return ticket;
+    }
+
+    /** 消费 ticket 并返回 userId；无效或过期返回 null */
+    public Long consumeTicket(String ticket) {
+        if (ticket == null || ticket.isBlank()) {
+            return null;
+        }
+        purgeExpiredTickets();
+        TicketEntry entry = tickets.remove(ticket.trim());
+        if (entry == null || entry.expiresAtMs() < System.currentTimeMillis()) {
+            return null;
+        }
+        return entry.userId();
+    }
+
+    public int ticketTtlSeconds() {
+        return (int) (TICKET_TTL_MS / 1000);
+    }
+
+    private void purgeExpiredTickets() {
+        long now = System.currentTimeMillis();
+        tickets.entrySet().removeIf(e -> e.getValue().expiresAtMs() < now);
+    }
 
     public SseEmitter subscribe(Long userId) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);

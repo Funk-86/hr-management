@@ -10,6 +10,7 @@ import org.example.hrmanagement.common.dto.PageQuery;
 import org.example.hrmanagement.common.exception.BusinessException;
 import org.example.hrmanagement.common.file.AvatarService;
 import org.example.hrmanagement.common.result.PageResult;
+import org.example.hrmanagement.common.security.EmployeeDataScope;
 import org.example.hrmanagement.common.util.SecurityUtil;
 import org.example.hrmanagement.module.auth.entity.Role;
 import org.example.hrmanagement.module.auth.entity.User;
@@ -48,6 +49,7 @@ public class EmployeeServiceImpl implements EmployeeService {
     private final UserRoleMapper userRoleMapper;
     private final PasswordEncoder passwordEncoder;
     private final AvatarService avatarService;
+    private final EmployeeDataScope employeeDataScope;
 
 
     private static final int EXPORT_LIMIT = 5000;
@@ -138,6 +140,7 @@ public class EmployeeServiceImpl implements EmployeeService {
         if (employee == null) {
             throw new BusinessException("该员工不存在");
         }
+        employeeDataScope.assertCanView(id);
 
         if (employee.getDeptId() == null) {
             throw new BusinessException("员工未关联部门");
@@ -231,6 +234,7 @@ public class EmployeeServiceImpl implements EmployeeService {
         if (employee == null) {
             throw new BusinessException("员工不存在");
         }
+        employeeDataScope.assertCanManage(id);
         Long deptId = dto.getDeptId() != null ? dto.getDeptId() : employee.getDeptId();
         Long positionId = dto.getPositionId() != null ? dto.getPositionId() : employee.getPositionId();
         if (dto.getDeptId() != null) {
@@ -303,6 +307,7 @@ public class EmployeeServiceImpl implements EmployeeService {
         if (employee == null) {
             throw new BusinessException("员工不存在");
         }
+        employeeDataScope.assertCanManage(id);
         Long userCount = userMapper.selectCount(
                 new LambdaQueryWrapper<User>().eq(User::getEmployeeId, id)
         );

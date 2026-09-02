@@ -9,6 +9,7 @@ import org.example.hrmanagement.common.result.PageResult;
 import org.example.hrmanagement.common.result.Result;
 import org.example.hrmanagement.module.notification.service.NotificationService;
 import org.example.hrmanagement.module.notification.vo.NotificationVO;
+import org.example.hrmanagement.module.notification.vo.StreamTicketVO;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -37,10 +38,16 @@ public class NotificationController {
         return Result.success(Map.of("count", notificationService.unreadCount()));
     }
 
-    @Operation(summary = "SSE 未读推送（EventSource 可用 ?token=JWT）")
+    @Operation(summary = "SSE 连接 ticket（需 Authorization Bearer）")
+    @PostMapping("/stream-ticket")
+    public Result<StreamTicketVO> streamTicket() {
+        return Result.success(notificationService.createStreamTicket());
+    }
+
+    @Operation(summary = "SSE 未读推送（EventSource 使用 ?ticket= 一次性凭证）")
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream() {
-        return notificationService.subscribeStream();
+    public SseEmitter stream(@RequestParam String ticket) {
+        return notificationService.subscribeStream(ticket);
     }
 
     @Operation(summary = "标记单条已读")

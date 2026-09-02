@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.example.hrmanagement.common.dto.PageQuery;
 import org.example.hrmanagement.common.exception.BusinessException;
 import org.example.hrmanagement.common.result.PageResult;
+import org.example.hrmanagement.common.security.EmployeeDataScope;
 import org.example.hrmanagement.common.security.LoginUser;
 import org.example.hrmanagement.common.util.SecurityUtil;
 import org.example.hrmanagement.module.attendance.entity.Attendance;
@@ -55,6 +56,8 @@ public class LeaveServiceImpl implements LeaveService {
     private LeaveBalanceMapper leaveBalanceMapper;
     @Autowired
     private AttendanceMapper attendanceMapper;
+    @Autowired
+    private EmployeeDataScope employeeDataScope;
 
     @Override
     public List<LeaveTypeVO> getLeaveType() {
@@ -281,7 +284,7 @@ public class LeaveServiceImpl implements LeaveService {
         int y = year != null ? year : LocalDate.now().getYear();
         List<Long> empIds;
         if (employeeId != null) {
-            assertCanViewEmployee(employeeId);
+            employeeDataScope.assertCanView(employeeId);
             empIds = List.of(employeeId);
         } else {
             empIds = resolveScopedEmployeeIds();
@@ -471,23 +474,6 @@ public class LeaveServiceImpl implements LeaveService {
             result.add(vo);
         }
         return result;
-    }
-
-    private void assertCanViewEmployee(Long employeeId) {
-        if (SecurityUtil.isHrStaff()) {
-            return;
-        }
-        if (SecurityUtil.hasRole("EMPLOYEE") && !SecurityUtil.isManagerUp()) {
-            if (!Objects.equals(employeeId, SecurityUtil.requireEmployeeId())) {
-                throw new BusinessException("无权查看他人余额");
-            }
-            return;
-        }
-        Long deptId = SecurityUtil.requireDeptId();
-        Employee emp = employeeMapper.selectById(employeeId);
-        if (emp == null || !Objects.equals(emp.getDeptId(), deptId)) {
-            throw new BusinessException("无权查看该员工余额");
-        }
     }
 
     private List<Long> resolveScopedEmployeeIds() {

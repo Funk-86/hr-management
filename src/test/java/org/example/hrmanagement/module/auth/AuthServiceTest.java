@@ -11,6 +11,7 @@ import org.example.hrmanagement.module.auth.dto.LoginDTO;
 import org.example.hrmanagement.module.auth.entity.User;
 import org.example.hrmanagement.module.auth.mapper.PermissionMapper;
 import org.example.hrmanagement.module.auth.mapper.UserMapper;
+import org.example.hrmanagement.module.auth.service.UserSettingService;
 import org.example.hrmanagement.module.auth.service.impl.AuthServiceImpl;
 import org.example.hrmanagement.module.auth.vo.LoginVO;
 import org.example.hrmanagement.module.employee.mapper.EmployeeMapper;
@@ -44,6 +45,8 @@ class AuthServiceTest {
     private EmployeeMapper employeeMapper;
     @Mock
     private AvatarService avatarService;
+    @Mock
+    private UserSettingService userSettingService;
 
     @InjectMocks
     private AuthServiceImpl authService;
@@ -86,6 +89,7 @@ class AuthServiceTest {
         when(permissionMapper.selectPermCodesByUserIdAndRole(1L, "SUPER_ADMIN")).thenReturn(java.util.List.of());
         when(permissionMapper.selectMenusByUserIdAndRole(1L, "SUPER_ADMIN")).thenReturn(java.util.List.of());
         when(avatarService.resolveAvatarUrl(any())).thenReturn("/avatar.png");
+        doNothing().when(userSettingService).assertMfaIfRequired(1L, null);
 
         LoginVO result = authService.login(dto);
 

@@ -3,6 +3,7 @@ package org.example.hrmanagement.module.notification.service;
 import org.example.hrmanagement.common.dto.PageQuery;
 import org.example.hrmanagement.common.result.PageResult;
 import org.example.hrmanagement.module.notification.vo.NotificationVO;
+import org.example.hrmanagement.module.notification.vo.StreamTicketVO;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Collection;
@@ -23,6 +24,9 @@ public interface NotificationService {
 
     void markAllRead();
 
-    /** 建立当前登录用户的 SSE 连接 */
-    SseEmitter subscribeStream();
+    /** 建立 SSE 连接（需有效 ticket） */
+    SseEmitter subscribeStream(String ticket);
+
+    /** 为当前登录用户签发 SSE 连接 ticket */
+    StreamTicketVO createStreamTicket();
 }

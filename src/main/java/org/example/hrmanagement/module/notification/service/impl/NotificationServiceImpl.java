@@ -19,6 +19,7 @@ import org.example.hrmanagement.module.notification.mapper.NotificationMapper;
 import org.example.hrmanagement.module.notification.service.NotificationService;
 import org.example.hrmanagement.module.notification.sse.NotificationSseHub;
 import org.example.hrmanagement.module.notification.vo.NotificationVO;
+import org.example.hrmanagement.module.notification.vo.StreamTicketVO;
 import org.example.hrmanagement.module.notification.vo.UnreadPushVO;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -170,8 +171,21 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    public SseEmitter subscribeStream() {
+    public StreamTicketVO createStreamTicket() {
         Long userId = SecurityUtil.getUserId();
+        String ticket = notificationSseHub.createTicket(userId);
+        StreamTicketVO vo = new StreamTicketVO();
+        vo.setTicket(ticket);
+        vo.setExpiresIn(notificationSseHub.ticketTtlSeconds());
+        return vo;
+    }
+
+    @Override
+    public SseEmitter subscribeStream(String ticket) {
+        Long userId = notificationSseHub.consumeTicket(ticket);
+        if (userId == null) {
+            throw new BusinessException("SSE 连接 ticket 无效或已过期");
+        }
         return notificationSseHub.subscribe(userId);
     }
 
