@@ -17,6 +17,7 @@ logging:
   level:
     root: warn
     org.example.hrmanagement: info
+    org.flywaydb: info
 
 aliyun:
   oss:
