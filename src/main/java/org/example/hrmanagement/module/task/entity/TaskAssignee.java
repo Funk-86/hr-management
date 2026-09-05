@@ -19,6 +19,9 @@ public class TaskAssignee extends BaseEntity {
     /** 执行人（员工ID） */
     private Long employeeId;
 
+    /** ASSIGN 指派 / CLAIM 大厅抢单 */
+    private String source;
+
     /** 状态：0-待接收 1-进行中 2-已完成 3-已驳回 4-已关闭 */
     private Integer status;
 

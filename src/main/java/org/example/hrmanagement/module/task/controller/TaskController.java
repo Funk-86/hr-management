@@ -9,15 +9,20 @@ import org.example.hrmanagement.common.dto.PageQuery;
 import org.example.hrmanagement.common.result.PageResult;
 import org.example.hrmanagement.common.result.Result;
 import org.example.hrmanagement.module.task.dto.TaskCreateDto;
+import org.example.hrmanagement.module.task.dto.TaskHallAbandonDTO;
+import org.example.hrmanagement.module.task.dto.TaskHallCreateDTO;
+import org.example.hrmanagement.module.task.dto.TaskHallReclaimDTO;
 import org.example.hrmanagement.module.task.dto.TaskProgressDTO;
 import org.example.hrmanagement.module.task.dto.TaskRejectDTO;
 import org.example.hrmanagement.module.task.dto.TaskScoreDTO;
 import org.example.hrmanagement.module.task.service.TaskAttachmentService;
+import org.example.hrmanagement.module.task.service.TaskHallService;
 import org.example.hrmanagement.module.task.service.TaskOverdueReminderService;
 import org.example.hrmanagement.module.task.service.TaskService;
 import org.example.hrmanagement.module.task.vo.TaskAttachmentVO;
 import org.example.hrmanagement.module.task.vo.TaskBoardVO;
 import org.example.hrmanagement.module.task.vo.TaskDetailVO;
+import org.example.hrmanagement.module.task.vo.TaskHallClaimResultVO;
 import org.example.hrmanagement.module.task.vo.TaskTodoStatsVO;
 import org.example.hrmanagement.module.task.vo.TaskVO;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,6 +39,7 @@ import java.util.Map;
 public class TaskController {
 
     private final TaskService taskService;
+    private final TaskHallService taskHallService;
     private final TaskOverdueReminderService taskOverdueReminderService;
     private final TaskAttachmentService taskAttachmentService;
 
@@ -43,6 +49,52 @@ public class TaskController {
     @PostMapping
     public Result<Void> create(@Valid @RequestBody TaskCreateDto dto) {
         taskService.create(dto);
+        return Result.success();
+    }
+
+    @Operation(summary = "发布任务大厅任务")
+    @OperationLog(module = "任务大厅", value = "发布大厅任务")
+    @PreAuthorize("hasAuthority('feat.task.hall.publish')")
+    @PostMapping("/hall")
+    public Result<Void> publishHall(@Valid @RequestBody TaskHallCreateDTO dto) {
+        taskHallService.publish(dto);
+        return Result.success();
+    }
+
+    @Operation(summary = "任务大厅列表（本部门未满员）")
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/hall")
+    public Result<PageResult<TaskVO>> listHall(@Valid PageQuery page) {
+        return Result.success(taskHallService.listOpen(page));
+    }
+
+    @Operation(summary = "接取大厅任务")
+    @OperationLog(module = "任务大厅", value = "接取任务")
+    @PreAuthorize("hasAuthority('feat.task.hall.claim')")
+    @PostMapping("/{id}/claim")
+    public Result<TaskHallClaimResultVO> claim(@PathVariable Long id) {
+        return Result.success(taskHallService.claim(id));
+    }
+
+    @Operation(summary = "放弃大厅任务名额")
+    @OperationLog(module = "任务大厅", value = "放弃任务")
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    @PostMapping("/{id}/abandon")
+    public Result<Void> abandon(
+            @PathVariable Long id,
+            @Valid @RequestBody TaskHallAbandonDTO dto) {
+        taskHallService.abandon(id, dto);
+        return Result.success();
+    }
+
+    @Operation(summary = "强制收回大厅任务")
+    @OperationLog(module = "任务大厅", value = "强制收回")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER')")
+    @PostMapping("/{id}/reclaim")
+    public Result<Void> reclaim(
+            @PathVariable Long id,
+            @Valid @RequestBody TaskHallReclaimDTO dto) {
+        taskHallService.reclaim(id, dto);
         return Result.success();
     }
 

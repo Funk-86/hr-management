@@ -25,6 +25,7 @@ import org.example.hrmanagement.module.task.mapper.TaskAssigneeMapper;
 import org.example.hrmanagement.module.task.mapper.TaskLogMapper;
 import org.example.hrmanagement.module.task.mapper.TaskMapper;
 import org.example.hrmanagement.module.task.service.TaskAttachmentService;
+import org.example.hrmanagement.module.task.service.TaskHallService;
 import org.example.hrmanagement.module.task.service.TaskService;
 import org.example.hrmanagement.module.task.vo.TaskAssigneeVO;
 import org.example.hrmanagement.module.task.vo.TaskBoardVO;
@@ -76,6 +77,7 @@ public class TaskServiceImpl implements TaskService {
     private final TaskScoreBonusDictMapper taskScoreBonusDictMapper;
     private final ProjectMapper projectMapper;
     private final ObjectProvider<ProjectService> projectServiceProvider;
+    private final ObjectProvider<TaskHallService> taskHallServiceProvider;
 
     /**
      * 创建并下发任务：校验执行人 → 写 hr_task / hr_task_assignee → CREATE 日志。
@@ -150,6 +152,9 @@ public class TaskServiceImpl implements TaskService {
         task.setCreatorId(creatorId);
         task.setDeptId(creatorDeptId);
         task.setPriority(dto.getPriority() == null ? 2 : dto.getPriority());
+        task.setClaimMode(org.example.hrmanagement.module.task.constant.TaskHallConstants.CLAIM_MODE_ASSIGNED);
+        task.setClaimedCount(0);
+        task.setVersion(0);
         task.setStatus(0);
         task.setStartTime(dto.getStartTime());
         task.setDueTime(dto.getDueTime());
@@ -159,6 +164,7 @@ public class TaskServiceImpl implements TaskService {
             TaskAssignee assignee = new TaskAssignee();
             assignee.setTaskId(task.getId());
             assignee.setEmployeeId(empId);
+            assignee.setSource(org.example.hrmanagement.module.task.constant.TaskHallConstants.SOURCE_ASSIGN);
             assignee.setStatus(0);
             assignee.setProgress(0);
             taskAssigneeMapper.insert(assignee);
@@ -342,7 +348,10 @@ public class TaskServiceImpl implements TaskService {
                 new LambdaQueryWrapper<TaskAssignee>().eq(TaskAssignee::getTaskId, taskId));
         boolean isAssignee = assignees.stream().anyMatch(a -> Objects.equals(a.getEmployeeId(), myId));
         boolean isCreator = Objects.equals(task.getCreatorId(), myId);
-        if (!SecurityUtil.isHrStaff() && !isCreator && !isAssignee) {
+        boolean sameDeptHall = "OPEN".equals(task.getClaimMode())
+                && SecurityUtil.getDeptId() != null
+                && Objects.equals(SecurityUtil.getDeptId(), task.getDeptId());
+        if (!SecurityUtil.isHrStaff() && !isCreator && !isAssignee && !sameDeptHall) {
             throw new BusinessException("无权查看该任务");
         }
 
@@ -412,6 +421,14 @@ public class TaskServiceImpl implements TaskService {
         vo.setCreatorId(task.getCreatorId());
         vo.setCreatorName(nameMap.get(task.getCreatorId()));
         vo.setOverdue(isOverdue(task, now));
+        vo.setClaimMode(task.getClaimMode());
+        vo.setClaimQuota(task.getClaimQuota());
+        vo.setClaimedCount(task.getClaimedCount());
+        vo.setDifficulty(task.getDifficulty());
+        vo.setSuggestBonus(task.getSuggestBonus());
+        vo.setOverduePolicy(task.getOverduePolicy());
+        vo.setDeductAmount(task.getDeductAmount());
+        vo.setOverduePolicyLabel(buildOverduePolicyLabel(task));
         if (myAssignee != null) {
             vo.setMyStatus(myAssignee.getStatus());
             vo.setMyProgress(myAssignee.getProgress());
@@ -520,6 +537,10 @@ public class TaskServiceImpl implements TaskService {
                 a.setStatus(4);
                 taskAssigneeMapper.updateById(a);
             }
+        }
+        TaskHallService hallService = taskHallServiceProvider.getIfAvailable();
+        if (hallService != null) {
+            hallService.applyClosePolicy(task, myId, "关闭任务");
         }
         saveLog(taskId, myId, "CLOSE", "关闭任务");
         if (task.getParentId() != null && task.getParentId() > 0) {
@@ -820,6 +841,30 @@ public class TaskServiceImpl implements TaskService {
             refreshParentFromChildren(taskId);
             return;
         }
+        // 大厅任务：须满员且全员完成才标完成
+        if ("OPEN".equals(task.getClaimMode())) {
+            int quota = task.getClaimQuota() == null ? 1 : task.getClaimQuota();
+            long active = taskAssigneeMapper.selectCount(
+                    new LambdaQueryWrapper<TaskAssignee>()
+                            .eq(TaskAssignee::getTaskId, taskId)
+                            .eq(TaskAssignee::getSource, "CLAIM")
+                            .in(TaskAssignee::getStatus, List.of(0, 1, 2)));
+            long unfinished = taskAssigneeMapper.selectCount(
+                    new LambdaQueryWrapper<TaskAssignee>()
+                            .eq(TaskAssignee::getTaskId, taskId)
+                            .eq(TaskAssignee::getSource, "CLAIM")
+                            .in(TaskAssignee::getStatus, List.of(0, 1)));
+            if (active >= quota && unfinished == 0) {
+                task.setStatus(2);
+                task.setClaimedCount((int) active);
+                taskMapper.updateById(task);
+            } else if (active >= quota && (task.getStatus() == null || task.getStatus() == 0)) {
+                task.setStatus(1);
+                task.setClaimedCount((int) active);
+                taskMapper.updateById(task);
+            }
+            return;
+        }
         Long unfinished = taskAssigneeMapper.selectCount(
                 new LambdaQueryWrapper<TaskAssignee>()
                         .eq(TaskAssignee::getTaskId, taskId)
@@ -876,6 +921,19 @@ public class TaskServiceImpl implements TaskService {
                 && (task.getStatus() == 0 || task.getStatus() == 1);
     }
 
+    private String buildOverduePolicyLabel(Task task) {
+        if (task.getOverduePolicy() == null) {
+            return null;
+        }
+        return switch (task.getOverduePolicy()) {
+            case "MARK_ONLY" -> "逾期/未完成：仅标记，不额外扣款";
+            case "ZERO_BONUS" -> "逾期/未完成：相关执行人奖金按 0 处理";
+            case "DEDUCT" -> "逾期/未完成：对未完成执行人扣款 ¥"
+                    + (task.getDeductAmount() == null ? "0" : task.getDeductAmount());
+            default -> task.getOverduePolicy();
+        };
+    }
+
     /** 列表项 VO 转换。 */
     private TaskVO toTaskVO(Task task, String creatorName, TaskAssignee myAssignee,
                             Integer overallProgress, boolean hasChildren, LocalDateTime now) {
@@ -897,6 +955,13 @@ public class TaskServiceImpl implements TaskService {
             vo.setMyProgress(myAssignee.getProgress());
         }
         vo.setProgress(overallProgress == null ? 0 : overallProgress);
+        vo.setClaimMode(task.getClaimMode());
+        vo.setClaimQuota(task.getClaimQuota());
+        vo.setClaimedCount(task.getClaimedCount());
+        vo.setDifficulty(task.getDifficulty());
+        vo.setSuggestBonus(task.getSuggestBonus());
+        vo.setOverduePolicy(task.getOverduePolicy());
+        vo.setDeductAmount(task.getDeductAmount());
         vo.setOverdue(isOverdue(task, now));
         return vo;
     }

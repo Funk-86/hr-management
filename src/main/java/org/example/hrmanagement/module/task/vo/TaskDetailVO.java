@@ -2,6 +2,7 @@ package org.example.hrmanagement.module.task.vo;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -58,4 +59,14 @@ public class TaskDetailVO {
 
     /** 附件列表 */
     private List<TaskAttachmentVO> attachments;
+
+    private String claimMode;
+    private Integer claimQuota;
+    private Integer claimedCount;
+    private Integer difficulty;
+    private BigDecimal suggestBonus;
+    private String overduePolicy;
+    private BigDecimal deductAmount;
+    /** 逾期策略说明文案 */
+    private String overduePolicyLabel;
 }
