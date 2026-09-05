@@ -34,16 +34,24 @@ public class EmployeeController {
     @Operation(summary = "员工列表（分页）")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER','EMPLOYEE')")
     @GetMapping
-    public Result<PageResult<EmployeeVO>> getAllEmployees(@Valid PageQuery page) {
-        return Result.success(employeeService.list(page));
+    public Result<PageResult<EmployeeVO>> getAllEmployees(
+            @Valid PageQuery page,
+            @RequestParam(required = false) Long deptId,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) String keyword) {
+        return Result.success(employeeService.list(page, deptId, status, keyword));
     }
 
     @Operation(summary = "导出员工 Excel")
     @OperationLog(module = "员工管理", value = "导出员工")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN','DEPT_MANAGER')")
     @GetMapping("/export")
-    public void exportEmployees(HttpServletResponse response) {
-        List<EmployeeVO> list = employeeService.listForExport();
+    public void exportEmployees(
+            HttpServletResponse response,
+            @RequestParam(required = false) Long deptId,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) String keyword) {
+        List<EmployeeVO> list = employeeService.listForExport(deptId, status, keyword);
         List<EmployeeExportRow> rows = list.stream().map(this::toExportRow).toList();
         ExcelExportHelper.write(response, "员工花名册.xlsx", "员工", EmployeeExportRow.class, rows);
     }

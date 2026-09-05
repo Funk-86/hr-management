@@ -15,7 +15,12 @@ import org.example.hrmanagement.module.position.vo.PositionVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -39,8 +44,37 @@ public class PositionServiceImpl implements PositionService {
             throw new BusinessException("部门不存在");
         }
 
-        List<Position> positions=positionMapper.selectList(new LambdaQueryWrapper<Position>().eq(Position::getDeptId,deptId).orderByAsc(Position::getPositionName));
-        return positions.stream().map(p-> toVO(p,department.getDeptName())).collect(Collectors.toList());
+        List<Long> deptIds = collectDeptIdsIncludingDescendants(deptId);
+        List<Position> positions = positionMapper.selectList(
+                new LambdaQueryWrapper<Position>()
+                        .in(Position::getDeptId, deptIds)
+                        .orderByAsc(Position::getDeptId)
+                        .orderByAsc(Position::getPositionName));
+
+        Map<Long, String> deptNameMap = departmentMapper.selectBatchIds(deptIds).stream()
+                .collect(Collectors.toMap(Department::getId, Department::getDeptName, (a, b) -> a));
+
+        return positions.stream()
+                .map(p -> toVO(p, deptNameMap.getOrDefault(p.getDeptId(), department.getDeptName())))
+                .collect(Collectors.toList());
+    }
+
+    /** 含本部门及全部下级部门 ID（选总公司时可看全公司岗位） */
+    private List<Long> collectDeptIdsIncludingDescendants(Long deptId) {
+        Set<Long> ids = new HashSet<>();
+        ids.add(deptId);
+        List<Department> all = departmentMapper.selectList(null);
+        collectChildDeptIds(all, deptId, ids);
+        return new ArrayList<>(ids);
+    }
+
+    private void collectChildDeptIds(List<Department> all, Long parentId, Set<Long> ids) {
+        for (Department d : all) {
+            if (Objects.equals(d.getParentId(), parentId)) {
+                ids.add(d.getId());
+                collectChildDeptIds(all, d.getId(), ids);
+            }
+        }
     }
 
     @Override

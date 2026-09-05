@@ -20,6 +20,8 @@ public interface SalaryService {
 
     PageResult<SalaryVO> getMyPaidSalaries(PageQuery page, String salaryMonth);
 
+    List<SalaryVO> listMyPaidForExport(String salaryMonth);
+
     SalaryVO getMySalaryById(Long id);
 
     /** 按员工+月份预计算底薪与任务奖金 */

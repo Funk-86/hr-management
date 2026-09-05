@@ -2,15 +2,18 @@ package org.example.hrmanagement.module.salary.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.example.hrmanagement.common.annotation.OperationLog;
 import org.example.hrmanagement.common.dto.PageQuery;
+import org.example.hrmanagement.common.excel.ExcelExportHelper;
 import org.example.hrmanagement.common.result.PageResult;
 import org.example.hrmanagement.common.result.Result;
 import org.example.hrmanagement.module.salary.dto.AttendanceDeductRuleUpdateDTO;
 import org.example.hrmanagement.module.salary.dto.SalaryCreateDTO;
 import org.example.hrmanagement.module.salary.dto.SalaryGenerateDTO;
 import org.example.hrmanagement.module.salary.dto.SalaryUpdateDTO;
+import org.example.hrmanagement.module.salary.excel.SalaryMineExportRow;
 import org.example.hrmanagement.module.salary.service.SalaryService;
 import org.example.hrmanagement.module.salary.vo.AttendanceDeductRuleVO;
 import org.example.hrmanagement.module.salary.vo.SalaryPreviewVO;
@@ -43,6 +46,34 @@ public class SalaryController {
     @GetMapping("/mine/{id}")
     public Result<SalaryVO> getMySalaryById(@PathVariable Long id) {
         return Result.success(salaryService.getMySalaryById(id));
+    }
+
+    @Operation(summary = "导出我的薪资条 Excel")
+    @OperationLog(module = "薪资", value = "导出我的薪资条")
+    @PreAuthorize("hasAuthority('feat.salary.self')")
+    @GetMapping("/mine/export")
+    public void exportMySalaries(
+            HttpServletResponse response,
+            @RequestParam(required = false) String salaryMonth) {
+        List<SalaryVO> list = salaryService.listMyPaidForExport(salaryMonth);
+        List<SalaryMineExportRow> rows = list.stream().map(this::toMineExportRow).toList();
+        ExcelExportHelper.write(response, "我的薪资条.xlsx", "薪资", SalaryMineExportRow.class, rows);
+    }
+
+    private SalaryMineExportRow toMineExportRow(SalaryVO vo) {
+        SalaryMineExportRow row = new SalaryMineExportRow();
+        row.setSalaryMonth(vo.getSalaryMonth());
+        row.setEmpNo(vo.getEmpNo());
+        row.setEmployeeName(vo.getEmployeeName());
+        row.setPositionName(vo.getPositionName());
+        row.setBaseSalary(vo.getBaseSalary());
+        row.setTaskBonus(vo.getTaskBonus());
+        row.setBonus(vo.getBonus());
+        row.setDeduction(vo.getDeduction());
+        row.setActualSalary(vo.getActualSalary());
+        row.setPayDate(vo.getPayDate() == null ? null : vo.getPayDate().toString());
+        row.setRemark(vo.getRemark());
+        return row;
     }
 
     @Operation(summary = "考勤扣款规则列表")

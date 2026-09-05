@@ -31,6 +31,7 @@ import org.example.hrmanagement.module.position.mapper.PositionMapper;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -55,8 +56,8 @@ public class EmployeeServiceImpl implements EmployeeService {
     private static final int EXPORT_LIMIT = 5000;
 
     @Override
-    public PageResult<EmployeeVO> list(PageQuery page){
-        LambdaQueryWrapper<Employee> wrapper = buildListWrapper();
+    public PageResult<EmployeeVO> list(PageQuery page, Long deptId, Integer status, String keyword) {
+        LambdaQueryWrapper<Employee> wrapper = buildListWrapper(deptId, status, keyword);
 
         IPage<Employee> iPage = employeeMapper.selectPage(
                 new Page<>(page.getPageNum(), page.getPageSize()), wrapper);
@@ -78,8 +79,8 @@ public class EmployeeServiceImpl implements EmployeeService {
     }
 
     @Override
-    public List<EmployeeVO> listForExport() {
-        LambdaQueryWrapper<Employee> wrapper = buildListWrapper();
+    public List<EmployeeVO> listForExport(Long deptId, Integer status, String keyword) {
+        LambdaQueryWrapper<Employee> wrapper = buildListWrapper(deptId, status, keyword);
         wrapper.last("LIMIT " + (EXPORT_LIMIT + 1));
         List<Employee> list = employeeMapper.selectList(wrapper);
         if (list.size() > EXPORT_LIMIT) {
@@ -88,14 +89,27 @@ public class EmployeeServiceImpl implements EmployeeService {
         return toVoList(list);
     }
 
-    private LambdaQueryWrapper<Employee> buildListWrapper() {
+    private LambdaQueryWrapper<Employee> buildListWrapper(
+            Long deptId, Integer status, String keyword) {
         LambdaQueryWrapper<Employee> wrapper = new LambdaQueryWrapper<>();
         if (SecurityUtil.hasRole("DEPT_MANAGER") && !SecurityUtil.isHrStaff()) {
-            Long deptId = SecurityUtil.requireDeptId();
-            wrapper.eq(Employee::getDeptId, deptId);
+            Long scopeDeptId = SecurityUtil.requireDeptId();
+            wrapper.eq(Employee::getDeptId, scopeDeptId);
         } else if (SecurityUtil.hasRole("EMPLOYEE") && !SecurityUtil.isManagerUp()) {
             Long employeeId = SecurityUtil.requireEmployeeId();
             wrapper.eq(Employee::getId, employeeId);
+        }
+        if (deptId != null) {
+            wrapper.eq(Employee::getDeptId, deptId);
+        }
+        if (status != null) {
+            wrapper.eq(Employee::getStatus, status);
+        }
+        if (StringUtils.hasText(keyword)) {
+            String kw = keyword.trim();
+            wrapper.and(w -> w.like(Employee::getName, kw)
+                    .or().like(Employee::getEmpNo, kw)
+                    .or().like(Employee::getPhone, kw));
         }
         wrapper.orderByDesc(Employee::getCreatedAt);
         return wrapper;

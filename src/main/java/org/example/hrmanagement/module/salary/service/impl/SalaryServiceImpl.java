@@ -29,7 +29,9 @@ import org.example.hrmanagement.module.salary.vo.AttendanceDeductRuleVO;
 import org.example.hrmanagement.module.salary.vo.SalaryPreviewVO;
 import org.example.hrmanagement.module.salary.vo.SalaryVO;
 import org.example.hrmanagement.module.task.entity.TaskAssignee;
+import org.example.hrmanagement.module.task.entity.TaskHallDeduct;
 import org.example.hrmanagement.module.task.mapper.TaskAssigneeMapper;
+import org.example.hrmanagement.module.task.mapper.TaskHallDeductMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -62,6 +64,7 @@ public class SalaryServiceImpl implements SalaryService {
     private final PositionMapper positionMapper;
     private final SalaryBaseDictMapper salaryBaseDictMapper;
     private final TaskAssigneeMapper taskAssigneeMapper;
+    private final TaskHallDeductMapper taskHallDeductMapper;
     private final AttendanceMapper attendanceMapper;
     private final AttendanceDeductRuleMapper deductRuleMapper;
 
@@ -181,6 +184,37 @@ public class SalaryServiceImpl implements SalaryService {
     }
 
     @Override
+    public List<SalaryVO> listMyPaidForExport(String salaryMonth) {
+        Long employeeId = SecurityUtil.requireEmployeeId();
+        LambdaQueryWrapper<Salary> wrapper = new LambdaQueryWrapper<Salary>()
+                .eq(Salary::getEmployeeId, employeeId)
+                .eq(Salary::getStatus, 1)
+                .orderByDesc(Salary::getSalaryMonth);
+        if (StringUtils.hasText(salaryMonth)) {
+            wrapper.eq(Salary::getSalaryMonth, salaryMonth.trim());
+        }
+        List<Salary> list = salaryMapper.selectList(wrapper);
+        if (list == null || list.isEmpty()) {
+            return List.of();
+        }
+        Employee emp = employeeMapper.selectById(employeeId);
+        Set<Long> positionIds = list.stream()
+                .map(Salary::getPositionId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, String> positionNames = positionIds.isEmpty()
+                ? Map.of()
+                : positionMapper.selectBatchIds(positionIds).stream()
+                .collect(Collectors.toMap(Position::getId, Position::getPositionName, (a, b) -> a));
+        return list.stream().map(salary -> toSalaryVO(
+                salary,
+                emp != null ? emp.getName() : null,
+                emp != null ? emp.getEmpNo() : null,
+                salary.getPositionId() == null ? null : positionNames.get(salary.getPositionId())
+        )).collect(Collectors.toList());
+    }
+
+    @Override
     public SalaryVO getMySalaryById(Long id) {
         Long employeeId = SecurityUtil.requireEmployeeId();
         SalaryVO vo = getSalaryById(id);
@@ -233,13 +267,20 @@ public class SalaryServiceImpl implements SalaryService {
 
         BigDecimal taskBonus = sumTaskBonus(employee.getId(), month);
         DeductCalc deductCalc = calcAttendanceDeduction(employee.getId(), month);
+        BigDecimal hallDeduct = sumTaskHallDeduct(employee.getId(), month);
+        BigDecimal totalDeduct = deductCalc.total.add(hallDeduct);
+        String deductDetail = deductCalc.detail;
+        if (hallDeduct.compareTo(BigDecimal.ZERO) > 0) {
+            String hallPart = "任务大厅扣款 " + hallDeduct.toPlainString() + " 元";
+            deductDetail = StringUtils.hasText(deductDetail) ? deductDetail + "；" + hallPart : hallPart;
+        }
 
         vo.setBaseSalary(base);
         vo.setTaskBonus(taskBonus);
         vo.setBonus(taskBonus);
-        vo.setDeduction(deductCalc.total);
-        vo.setDeductDetail(deductCalc.detail);
-        vo.setActualSalary(base.add(taskBonus).subtract(deductCalc.total));
+        vo.setDeduction(totalDeduct);
+        vo.setDeductDetail(deductDetail);
+        vo.setActualSalary(base.add(taskBonus).subtract(totalDeduct));
         vo.setTip(tip);
         return vo;
     }
@@ -437,6 +478,18 @@ public class SalaryServiceImpl implements SalaryService {
                         .le(TaskAssignee::getFinishTime, end));
         return list.stream()
                 .map(TaskAssignee::getScoreBonus)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal sumTaskHallDeduct(Long employeeId, YearMonth month) {
+        String deductMonth = month.format(MONTH_FMT);
+        List<TaskHallDeduct> list = taskHallDeductMapper.selectList(
+                new LambdaQueryWrapper<TaskHallDeduct>()
+                        .eq(TaskHallDeduct::getEmployeeId, employeeId)
+                        .eq(TaskHallDeduct::getDeductMonth, deductMonth));
+        return list.stream()
+                .map(TaskHallDeduct::getAmount)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
