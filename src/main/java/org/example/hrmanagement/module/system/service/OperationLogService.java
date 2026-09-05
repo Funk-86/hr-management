@@ -15,4 +15,6 @@ public interface OperationLogService {
             LocalDateTime startTime,
             LocalDateTime endTime,
             PageQuery pageQuery);
+
+    OperationLogVO getById(Long id);
 }

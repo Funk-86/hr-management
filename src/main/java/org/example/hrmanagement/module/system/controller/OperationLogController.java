@@ -12,6 +12,7 @@ import org.example.hrmanagement.module.system.vo.OperationLogVO;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,5 +42,12 @@ public class OperationLogController {
             LocalDateTime endTime,
             @Valid PageQuery page) {
         return Result.success(operationLogService.page(module, status, userId, startTime, endTime, page));
+    }
+
+    @Operation(summary = "操作日志详情（含 Request / Response）")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','HR_ADMIN')")
+    @GetMapping("/{id}")
+    public Result<OperationLogVO> detail(@PathVariable Long id) {
+        return Result.success(operationLogService.getById(id));
     }
 }

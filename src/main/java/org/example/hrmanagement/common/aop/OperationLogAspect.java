@@ -1,7 +1,6 @@
 package org.example.hrmanagement.common.aop;
 
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -13,13 +12,9 @@ import org.example.hrmanagement.module.system.mapper.OperationLogMapper;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
-import org.springframework.web.multipart.MultipartFile;
-
-import java.util.Arrays;
-import java.util.stream.Collectors;
 
 /**
- * 操作日志切面：记录带有 @OperationLog 注解的方法调用，并落库。
+ * 操作日志切面：记录带有 @OperationLog 注解的方法调用，并落库 Request / Response。
  */
 @Slf4j
 @Aspect
@@ -27,9 +22,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class OperationLogAspect {
 
-    private static final int PARAMS_MAX = 2000;
-
     private final OperationLogMapper operationLogMapper;
+    private final OperationLogPayloadHelper payloadHelper;
 
     @Around("@annotation(opLog)")
     public Object around(ProceedingJoinPoint point, OperationLog opLog) throws Throwable {
@@ -37,13 +31,14 @@ public class OperationLogAspect {
                 (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         HttpServletRequest request = attributes != null ? attributes.getRequest() : null;
 
-        String ip = request != null ? request.getRemoteAddr() : "unknown";
+        String ip = resolveClientIp(request);
         String uri = request != null ? request.getRequestURI() : "?";
         String httpMethod = request != null ? request.getMethod() : "";
         String module = opLog.module();
         String desc = opLog.value();
         String method = httpMethod + " " + uri;
-        String params = truncate(formatArgs(point.getArgs()));
+        String requestInfo = payloadHelper.buildRequestInfo(request, point.getArgs());
+        String params = payloadHelper.buildParamsSummary(point.getArgs());
 
         Long userId = null;
         try {
@@ -56,14 +51,17 @@ public class OperationLogAspect {
         try {
             Object result = point.proceed();
             long elapsed = System.currentTimeMillis() - start;
-            persist(userId, module, desc, method, params, ip, 1, null, elapsed);
+            String responseInfo = payloadHelper.buildResponseInfo(result);
+            persist(userId, module, desc, method, params, requestInfo, responseInfo, ip, 1, null, elapsed);
             log.info("[OP_LOG] module={}, desc={}, uri={}, ip={}, elapsed={}ms, status=SUCCESS",
                     module, desc, uri, ip, elapsed);
             return result;
         } catch (Throwable e) {
             long elapsed = System.currentTimeMillis() - start;
             String err = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-            persist(userId, module, desc, method, params, ip, 0, truncate(err), elapsed);
+            String responseInfo = payloadHelper.buildErrorResponseInfo(e);
+            persist(userId, module, desc, method, params, requestInfo, responseInfo, ip, 0,
+                    payloadHelper.truncate(err, OperationLogPayloadHelper.BODY_MAX), elapsed);
             log.warn("[OP_LOG] module={}, desc={}, uri={}, ip={}, elapsed={}ms, status=FAIL, error={}",
                     module, desc, uri, ip, elapsed, err);
             throw e;
@@ -76,6 +74,8 @@ public class OperationLogAspect {
             String operation,
             String method,
             String params,
+            String requestInfo,
+            String responseInfo,
             String ip,
             int status,
             String errorMsg,
@@ -88,6 +88,8 @@ public class OperationLogAspect {
             entity.setOperation(operation);
             entity.setMethod(method);
             entity.setParams(params);
+            entity.setRequestInfo(requestInfo);
+            entity.setResponseInfo(responseInfo);
             entity.setIp(ip);
             entity.setStatus(status);
             entity.setErrorMsg(errorMsg);
@@ -98,30 +100,19 @@ public class OperationLogAspect {
         }
     }
 
-    private String formatArgs(Object[] args) {
-        if (args == null || args.length == 0) {
-            return "";
+    private String resolveClientIp(HttpServletRequest request) {
+        if (request == null) {
+            return "unknown";
         }
-        return Arrays.stream(args)
-                .map(arg -> {
-                    if (arg == null) {
-                        return "null";
-                    }
-                    if (arg instanceof MultipartFile file) {
-                        return "file:" + file.getOriginalFilename();
-                    }
-                    if (arg instanceof HttpServletRequest || arg instanceof HttpServletResponse) {
-                        return arg.getClass().getSimpleName();
-                    }
-                    return String.valueOf(arg);
-                })
-                .collect(Collectors.joining(", "));
-    }
-
-    private String truncate(String text) {
-        if (text == null) {
-            return null;
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            int comma = forwarded.indexOf(',');
+            return comma > 0 ? forwarded.substring(0, comma).trim() : forwarded.trim();
         }
-        return text.length() <= PARAMS_MAX ? text : text.substring(0, PARAMS_MAX);
+        String realIp = request.getHeader("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp.trim();
+        }
+        return request.getRemoteAddr();
     }
 }

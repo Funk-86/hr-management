@@ -5,7 +5,9 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.example.hrmanagement.common.dto.PageQuery;
+import org.example.hrmanagement.common.exception.BusinessException;
 import org.example.hrmanagement.common.result.PageResult;
+import org.example.hrmanagement.common.result.ResultCode;
 import org.example.hrmanagement.module.auth.entity.User;
 import org.example.hrmanagement.module.auth.mapper.UserMapper;
 import org.example.hrmanagement.module.system.entity.OperationLog;
@@ -38,6 +40,19 @@ public class OperationLogServiceImpl implements OperationLogService {
             LocalDateTime endTime,
             PageQuery pageQuery) {
         LambdaQueryWrapper<OperationLog> wrapper = new LambdaQueryWrapper<>();
+        // 列表不查大字段，避免分页膨胀
+        wrapper.select(
+                OperationLog::getId,
+                OperationLog::getUserId,
+                OperationLog::getModule,
+                OperationLog::getOperation,
+                OperationLog::getMethod,
+                OperationLog::getIp,
+                OperationLog::getStatus,
+                OperationLog::getErrorMsg,
+                OperationLog::getDuration,
+                OperationLog::getCreatedAt
+        );
         if (StringUtils.hasText(module)) {
             wrapper.like(OperationLog::getModule, module.trim());
         }
@@ -62,31 +77,11 @@ public class OperationLogServiceImpl implements OperationLogService {
             return PageResult.empty();
         }
 
-        Set<Long> userIds = records.stream()
-                .map(OperationLog::getUserId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        Map<Long, String> usernameMap = userIds.isEmpty()
-                ? Map.of()
-                : userMapper.selectBatchIds(userIds).stream()
-                .collect(Collectors.toMap(User::getId, User::getUsername, (a, b) -> a));
+        Map<Long, String> usernameMap = loadUsernameMap(records);
 
-        List<OperationLogVO> vos = records.stream().map(log -> {
-            OperationLogVO vo = new OperationLogVO();
-            vo.setId(log.getId());
-            vo.setUserId(log.getUserId());
-            vo.setUsername(usernameMap.get(log.getUserId()));
-            vo.setModule(log.getModule());
-            vo.setOperation(log.getOperation());
-            vo.setMethod(log.getMethod());
-            vo.setParams(log.getParams());
-            vo.setIp(log.getIp());
-            vo.setStatus(log.getStatus());
-            vo.setErrorMsg(log.getErrorMsg());
-            vo.setDuration(log.getDuration());
-            vo.setCreatedAt(log.getCreatedAt());
-            return vo;
-        }).toList();
+        List<OperationLogVO> vos = records.stream()
+                .map(log -> toVo(log, usernameMap, false))
+                .toList();
 
         PageResult<OperationLogVO> result = new PageResult<>();
         result.setRecords(vos);
@@ -95,5 +90,57 @@ public class OperationLogServiceImpl implements OperationLogService {
         result.setPageSize(iPage.getSize());
         result.setPages(iPage.getPages());
         return result;
+    }
+
+    @Override
+    public OperationLogVO getById(Long id) {
+        if (id == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST);
+        }
+        OperationLog log = operationLogMapper.selectById(id);
+        if (log == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND);
+        }
+        Map<Long, String> usernameMap = log.getUserId() == null
+                ? Map.of()
+                : loadUsernameMap(List.of(log));
+        return toVo(log, usernameMap, true);
+    }
+
+    private Map<Long, String> loadUsernameMap(List<OperationLog> records) {
+        Set<Long> userIds = records.stream()
+                .map(OperationLog::getUserId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userMapper.selectBatchIds(userIds).stream()
+                .collect(Collectors.toMap(User::getId, User::getUsername, (a, b) -> a));
+    }
+
+    private OperationLogVO toVo(OperationLog log, Map<Long, String> usernameMap, boolean detail) {
+        OperationLogVO vo = new OperationLogVO();
+        vo.setId(log.getId());
+        vo.setUserId(log.getUserId());
+        vo.setUsername(usernameMap.get(log.getUserId()));
+        vo.setModule(log.getModule());
+        vo.setOperation(log.getOperation());
+        vo.setMethod(log.getMethod());
+        vo.setIp(log.getIp());
+        vo.setStatus(log.getStatus());
+        vo.setErrorMsg(log.getErrorMsg());
+        vo.setDuration(log.getDuration());
+        vo.setCreatedAt(log.getCreatedAt());
+        if (detail) {
+            vo.setParams(log.getParams());
+            String requestInfo = log.getRequestInfo();
+            if (!StringUtils.hasText(requestInfo) && StringUtils.hasText(log.getParams())) {
+                requestInfo = log.getParams();
+            }
+            vo.setRequestInfo(requestInfo);
+            vo.setResponseInfo(log.getResponseInfo());
+        }
+        return vo;
     }
 }

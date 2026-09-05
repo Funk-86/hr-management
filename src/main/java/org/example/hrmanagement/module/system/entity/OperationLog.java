@@ -29,8 +29,14 @@ public class OperationLog implements Serializable {
     /** 请求方法 */
     private String method;
 
-    /** 请求参数 */
+    /** 请求参数（短摘要，兼容旧数据） */
     private String params;
+
+    /** 请求信息（JSON，已脱敏/截断） */
+    private String requestInfo;
+
+    /** 响应信息（JSON，已脱敏/截断） */
+    private String responseInfo;
 
     /** IP地址 */
     private String ip;
