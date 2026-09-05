@@ -3,9 +3,15 @@
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/hr_management?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://localhost:3306/hr_management?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: 123456
+  flyway:
+    baseline-on-migrate: true
+    # 与「已有完整业务表（含任务大厅）」的本地库对齐；无待跑迁移。
+    # 注意：baseline 只在「flyway 历史表不存在」时生效；
+    # 若只 DELETE 行而留着空表，Flyway 会从 V1 重跑并报 Table already exists。
+    baseline-version: 21
 
 mybatis-plus:
   configuration:
