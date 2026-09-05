@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
@@ -61,6 +62,7 @@ public class PackUpgradeAction extends AnAction implements DumbAware {
             @Override
             public void run(@NotNull ProgressIndicator indicator) {
                 indicator.setIndeterminate(true);
+                indicator.setText(title);
                 try {
                     PackUpgradeRunner.Result result = PackUpgradeRunner.run(
                             repoRoot,
@@ -68,8 +70,16 @@ public class PackUpgradeAction extends AnAction implements DumbAware {
                             includeFrontend,
                             skipUpload,
                             remoteApply,
-                            line -> indicator.setText2(trimLine(line))
+                            line -> {
+                                if (!indicator.isCanceled()) {
+                                    indicator.setText2(trimLine(line));
+                                }
+                            },
+                            indicator
                     );
+                    if (indicator.isCanceled()) {
+                        return;
+                    }
                     ApplicationManager.getApplication().invokeLater(() -> {
                         if (result.exitCode() == 0) {
                             Path latest = findLatestZip(result.outputDir()).orElse(result.outputDir());
@@ -87,10 +97,18 @@ public class PackUpgradeAction extends AnAction implements DumbAware {
                                     NotificationType.ERROR);
                         }
                     });
+                } catch (ProcessCanceledException cancel) {
+                    ApplicationManager.getApplication().invokeLater(() ->
+                            showNotification(project, "已停止升级任务（已强制结束 PowerShell/SSH）", NotificationType.WARNING));
                 } catch (Exception ex) {
                     ApplicationManager.getApplication().invokeLater(() ->
                             showNotification(project, "异常: " + ex.getMessage(), NotificationType.ERROR));
                 }
+            }
+
+            @Override
+            public void onCancel() {
+                // run() 内会响应 isCanceled 并 forceKill；此处仅补一条提示
             }
         });
     }

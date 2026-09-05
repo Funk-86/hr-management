@@ -1,13 +1,18 @@
 package org.example.hrupgrade;
 
 import com.intellij.execution.configurations.GeneralCommandLine;
+import com.intellij.execution.process.KillableProcessHandler;
 import com.intellij.execution.process.OSProcessHandler;
 import com.intellij.execution.process.ProcessAdapter;
 import com.intellij.execution.process.ProcessEvent;
+import com.intellij.execution.process.ProcessHandler;
 import com.intellij.execution.process.ProcessOutputTypes;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.SystemInfo;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -32,6 +37,18 @@ final class PackUpgradeRunner {
             boolean skipUpload,
             boolean remoteApply,
             Consumer<String> lineConsumer
+    ) throws Exception {
+        return run(repoRoot, includeBackend, includeFrontend, skipUpload, remoteApply, lineConsumer, null);
+    }
+
+    static Result run(
+            Path repoRoot,
+            boolean includeBackend,
+            boolean includeFrontend,
+            boolean skipUpload,
+            boolean remoteApply,
+            Consumer<String> lineConsumer,
+            @Nullable ProgressIndicator indicator
     ) throws Exception {
         Path scriptDir = ProjectPaths.upgradeScriptDir(repoRoot);
         GeneralCommandLine cmd = new GeneralCommandLine();
@@ -83,7 +100,9 @@ final class PackUpgradeRunner {
 
         StringBuilder log = new StringBuilder();
         AtomicInteger exit = new AtomicInteger(-1);
-        OSProcessHandler handler = new OSProcessHandler(cmd);
+        // Killable：取消时可强杀；Windows 下还需 taskkill /T 清掉 ssh/scp 子进程
+        KillableProcessHandler handler = new KillableProcessHandler(cmd);
+        handler.setShouldKillProcessSoftly(false);
         handler.addProcessListener(new ProcessAdapter() {
             @Override
             public void onTextAvailable(@NotNull ProcessEvent event, @NotNull Key outputType) {
@@ -107,8 +126,88 @@ final class PackUpgradeRunner {
             }
         });
         handler.startNotify();
-        handler.waitFor();
+
+        try {
+            waitUntilDoneOrCancel(handler, indicator);
+        } catch (ProcessCanceledException cancel) {
+            forceKill(handler);
+            throw cancel;
+        }
 
         return new Result(exit.get(), log.toString(), ProjectPaths.outputDir(repoRoot));
+    }
+
+    /** 分段 wait，以便响应进度条「停止」；卡住的 ssh 也会被取消逻辑杀掉。 */
+    private static void waitUntilDoneOrCancel(
+            @NotNull ProcessHandler handler,
+            @Nullable ProgressIndicator indicator
+    ) {
+        while (!handler.waitFor(400)) {
+            if (indicator != null && indicator.isCanceled()) {
+                if (lineSafe(indicator)) {
+                    indicator.setText2("正在停止打包/SSH…");
+                }
+                forceKill(handler);
+                // 再等最多 3s，避免停止按钮也一直转圈
+                handler.waitFor(3000);
+                throw new ProcessCanceledException();
+            }
+        }
+    }
+
+    private static boolean lineSafe(@Nullable ProgressIndicator indicator) {
+        try {
+            return indicator != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static void forceKill(@NotNull ProcessHandler handler) {
+        Long pid = null;
+        try {
+            if (handler instanceof OSProcessHandler) {
+                Process process = ((OSProcessHandler) handler).getProcess();
+                if (process != null && process.isAlive()) {
+                    pid = process.pid();
+                }
+            }
+        } catch (Exception ignored) {
+            // older JDKs / mock
+        }
+
+        try {
+            handler.destroyProcess();
+        } catch (Exception ignored) {
+            // continue with tree kill
+        }
+
+        if (pid != null && SystemInfo.isWindows) {
+            // PowerShell 下的 ssh/scp/mvn 是子进程，只杀父进程会留下孤儿导致「停止也卡住」
+            try {
+                new ProcessBuilder("taskkill", "/F", "/T", "/PID", String.valueOf(pid))
+                        .redirectErrorStream(true)
+                        .start()
+                        .waitFor();
+            } catch (Exception ignored) {
+                // best-effort
+            }
+        } else if (pid != null) {
+            try {
+                new ProcessBuilder("kill", "-9", "-" + pid)
+                        .redirectErrorStream(true)
+                        .start()
+                        .waitFor();
+            } catch (Exception ignored) {
+                try {
+                    new ProcessBuilder("kill", "-9", String.valueOf(pid))
+                            .redirectErrorStream(true)
+                            .start()
+                            .waitFor();
+                } catch (Exception ignored2) {
+                    // best-effort
+                }
+            }
+        }
     }
 }

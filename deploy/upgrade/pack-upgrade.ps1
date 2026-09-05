@@ -200,10 +200,20 @@ if (-not $SkipUpload -and $Upload -and $Upload.enabled) {
         Write-Host "upload config incomplete, skip" -ForegroundColor Yellow
     } else {
         Write-Host (">>> mkdir remote " + $RemoteDir) -ForegroundColor Cyan
-        $SshBase = @("-p", "$Port", "-o", "StrictHostKeyChecking=accept-new")
+        # BatchMode：无终端时不卡在口令/确认；超时避免 IDEA 后台任务一直转圈
+        $SshBase = @(
+            "-p", "$Port",
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=15",
+            "-o", "ServerAliveInterval=5",
+            "-o", "ServerAliveCountMax=3",
+            "-o", "StrictHostKeyChecking=accept-new"
+        )
         if ($Key) { $SshBase = @("-i", $Key) + $SshBase }
         & ssh @SshBase ($User + "@" + $HostName) ("mkdir -p " + $RemoteDir)
-        if ($LASTEXITCODE -ne 0) { throw "ssh mkdir failed" }
+        if ($LASTEXITCODE -ne 0) {
+            throw "ssh mkdir failed (exit=$LASTEXITCODE). Check: key passphrase? security group 22? ssh root@$HostName"
+        }
 
         Write-Host (">>> scp to " + $User + "@" + $HostName + ":" + $RemoteDir) -ForegroundColor Cyan
         $ScpArgs = @("-P", "$Port", $ZipPath, ($User + "@" + $HostName + ":" + $RemoteDir + "/"))
